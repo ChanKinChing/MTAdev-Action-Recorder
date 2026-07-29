@@ -5,6 +5,22 @@ const state = {
   testName: ''
 };
 
+chrome.storage.session.get('mtarec_state', function (r) {
+  if (r.mtarec_state) {
+    Object.assign(state, r.mtarec_state);
+    if (state.isRecording) {
+      state.isRecording = false;
+      state.steps = [];
+      state.testName = '';
+      chrome.storage.session.remove('mtarec_state');
+    }
+  }
+});
+
+function saveState() {
+  chrome.storage.session.set({ mtarec_state: state });
+}
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
 
@@ -17,12 +33,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.tabId = msg.tabId || (sender.tab ? sender.tab.id : null);
       state.steps = [];
       state.testName = msg.testName || 'Untitled';
+      saveState();
       sendResponse({ success: true, count: 0 });
       break;
 
     case 'REC_STOP':
       state.isRecording = false;
       const steps = [...state.steps];
+      saveState();
       sendResponse({ success: true, steps, testName: state.testName });
       break;
 
@@ -32,16 +50,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         return;
       }
       state.steps.push(msg.step);
+      saveState();
       sendResponse({ count: state.steps.length });
       break;
 
     case 'REC_DELETE_LAST_STEP':
       if (state.steps.length > 0) state.steps.pop();
+      saveState();
       sendResponse({ count: state.steps.length });
       break;
 
     case 'REC_DELETE_STEP':
       if (msg.index >= 0 && msg.index < state.steps.length) state.steps.splice(msg.index, 1);
+      saveState();
       sendResponse({ count: state.steps.length });
       break;
 
@@ -58,6 +79,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       state.isRecording = false;
       state.steps = [];
       state.testName = '';
+      saveState();
       sendResponse({ success: true });
       break;
 

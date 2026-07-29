@@ -17,11 +17,11 @@ function csvQuote(val) {
 }
 
 function stepsToCSV(testName, steps) {
-  var parts = [csvQuote(testName), ''];
+  var parts = [csvQuote(testName)];
   for (var i = 0; i < steps.length; i++) {
     var step = steps[i];
     if (step.action === 'open') {
-      parts.push(csvQuote(step.value), 'open');
+      parts.push(csvQuote(step.value), '', 'open');
     } else {
       parts.push(csvQuote(step.xpath || ''), csvQuote(step.value || ''), step.action);
     }
@@ -102,14 +102,18 @@ async function startRecording() {
       files: ['content_recorder.js']
     });
 
-    await chrome.runtime.sendMessage({
+    var resp = await chrome.runtime.sendMessage({
       type: 'REC_START',
       tabId: currentTabId,
-      url: tabs[0].url,
       testName: testName
     });
 
-    await chrome.tabs.sendMessage(currentTabId, { type: 'REC_START_RECORDING' });
+    if (!resp.success) {
+      setStatus('Error: ' + (resp.error || 'unknown'), 'ready');
+      return;
+    }
+
+    await chrome.tabs.sendMessage(currentTabId, { type: 'REC_START_RECORDING' }).catch(function () {});
 
     setRecordingUI(true);
   } catch (err) {
@@ -208,49 +212,5 @@ $('btnNew').addEventListener('click', async function () {
   resetUI();
   $('testName').value = 'Untitled';
 });
-
-/* =========================================================
-   RESIZE  HANDLER
-   ========================================================= */
-(function initResize() {
-  var app = $('app');
-  var handle = $('resizeHandle');
-  if (!app || !handle) return;
-  var MIN_W = 380, MIN_H = 320;
-
-  chrome.storage.local.get('mtarec_popup_size', function (r) {
-    var s = r.mtarec_popup_size;
-    if (s) {
-      document.body.style.width = Math.max(MIN_W, s.w) + 'px';
-      document.body.style.height = Math.max(MIN_H, s.h) + 'px';
-    }
-  });
-
-  handle.addEventListener('mousedown', function (e) {
-    e.preventDefault();
-    e.stopPropagation();
-    var startX = e.clientX, startY = e.clientY;
-    var startW = document.body.offsetWidth;
-    var startH = document.body.offsetHeight;
-
-    function onMove(ev) {
-      var w = Math.max(MIN_W, startW + (ev.clientX - startX));
-      var h = Math.max(MIN_H, startH + (ev.clientY - startY));
-      document.body.style.width = w + 'px';
-      document.body.style.height = h + 'px';
-    }
-
-    function onUp() {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-      chrome.storage.local.set({
-        mtarec_popup_size: { w: document.body.offsetWidth, h: document.body.offsetHeight }
-      });
-    }
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-  });
-})();
 
 document.addEventListener('DOMContentLoaded', checkState);

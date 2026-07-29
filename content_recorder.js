@@ -8,15 +8,17 @@
   let isRecording = false;
   let badgeEl = null;
   let dropdownEl = null;
+  let moreMenuEl = null;
   let panelEl = null;
   let isDragging = false;
   let dragOffX = 0, dragOffY = 0;
   let locSteps = [];
-
-  let checkElementMode = false;
-  let highlightedEl = null;
   let isMinimized = false;
   let dragStarted = false;
+  let pickModeAction = null;
+  let highlightedEl = null;
+  let mmPersistent = false;
+  let mmHideTimer = null;
 
   /* =========================================================
      XPATH  GENERATOR
@@ -26,28 +28,28 @@
   }
 
   function generateXPath(el) {
-    if (!el || el === document || el === document.body) return '//body';
+    if (!el || el === document || el === document.documentElement) return '/html';
     const tag = (el.tagName || '').toLowerCase();
     if (!tag) return '';
 
-    if (el.hasAttribute('name')) {
-      const n = el.getAttribute('name');
-      if (n && n.trim()) {
-        return '//*[@name="' + esc(n.trim()) + '"]';
-      }
-    }
     if (el.id) {
       return '//*[@id="' + esc(el.id) + '"]';
     }
+    if (el.hasAttribute('name')) {
+      const n = el.getAttribute('name');
+      if (n && n.trim() && document.querySelectorAll('[name="' + CSS.escape(n.trim()) + '"]').length === 1) {
+        return '//*[@name="' + esc(n.trim()) + '"]';
+      }
+    }
     if (el.hasAttribute('data-testid')) {
       const d = el.getAttribute('data-testid');
-      if (d && d.trim()) {
+      if (d && d.trim() && document.querySelectorAll('[data-testid="' + CSS.escape(d.trim()) + '"]').length === 1) {
         return '//*[@data-testid="' + esc(d.trim()) + '"]';
       }
     }
     if (el.hasAttribute('aria-label')) {
       const a = el.getAttribute('aria-label');
-      if (a && a.trim()) {
+      if (a && a.trim() && document.querySelectorAll('[aria-label="' + CSS.escape(a.trim()) + '"]').length === 1) {
         return '//*[@aria-label="' + esc(a.trim()) + '"]';
       }
     }
@@ -56,7 +58,7 @@
       for (const c of classes) {
         try {
           if (document.querySelectorAll('.' + CSS.escape(c)).length === 1) {
-            return '//*[contains(@class,"' + esc(c) + '")]';
+            return '//*[contains(concat(" ",normalize-space(@class)," ")," ' + esc(c) + ' ")]';
           }
         } catch (_) {}
       }
@@ -65,10 +67,10 @@
   }
 
   function buildFullXPath(el) {
-    if (!el || el === document.body) return '/html/body';
+    if (!el || el === document.documentElement || el === document) return '/html';
     const parts = [];
     let cur = el;
-    while (cur && cur.nodeType === 1 && cur !== document.body && cur !== document) {
+    while (cur && cur.nodeType === 1 && cur !== document.documentElement && cur !== document) {
       let tag = (cur.tagName || '').toLowerCase();
       if (!tag) break;
       if (cur.id) {
@@ -86,7 +88,7 @@
       parts.unshift(tag);
       cur = parent;
     }
-    return '/' + parts.join('/');
+    return '/html/' + parts.join('/');
   }
 
   /* =========================================================
@@ -107,11 +109,13 @@
     const el = e.target;
     if (badgeEl && badgeEl.contains(el)) return;
 
-    if (checkElementMode) {
+    if (pickModeAction) {
       e.preventDefault();
       e.stopPropagation();
-      sendStep(generateXPath(el), '', 'present');
-      exitCheckMode();
+      var val = '';
+      if (pickModeAction === 'check_presence_to_continue') val = 'present';
+      sendStep(generateXPath(el), val, pickModeAction);
+      exitPickMode();
       return;
     }
 
@@ -131,7 +135,12 @@
     const el = e.target;
     const tag = (el.tagName || '').toLowerCase();
     if (tag === 'select') {
-      const val = el.options[el.selectedIndex] ? el.options[el.selectedIndex].value : '';
+      var val = '';
+      if (el.multiple) {
+        val = Array.from(el.selectedOptions).map(function (o) { return o.value; }).join(';');
+      } else {
+        val = el.selectedIndex >= 0 ? el.options[el.selectedIndex].value : '';
+      }
       sendStep(generateXPath(el), val, 'dropdown');
     } else if (isTextInput(el)) {
       if (el.value) {
@@ -147,22 +156,26 @@
     const el = document.activeElement;
     if (!el || el === document.body || el === document.documentElement) return;
     if (badgeEl && badgeEl.contains(el)) return;
+    if (e.key === 'Enter' && isTextInput(el)) return;
     sendStep(generateXPath(el), e.key.toUpperCase(), 'press');
   }
 
-  function onCheckHover(e) {
-    if (!checkElementMode) return;
+  /* =========================================================
+     PICK  MODE  (generalized from checkElementMode)
+     ========================================================= */
+  function onPickHover(e) {
+    if (!pickModeAction) return;
     var el = e.target;
     if (badgeEl && badgeEl.contains(el)) return;
     if (el === highlightedEl) return;
-    clearCheckHighlight();
+    clearPickHighlight();
     el.style.outline = '2px solid #ff1744';
     el.style.outlineOffset = '-2px';
     highlightedEl = el;
   }
 
-  function onCheckUnhover(e) {
-    if (!checkElementMode) return;
+  function onPickUnhover(e) {
+    if (!pickModeAction) return;
     var el = e.target;
     if (el === highlightedEl) {
       el.style.outline = '';
@@ -170,18 +183,76 @@
     }
   }
 
-  function exitCheckMode() {
-    checkElementMode = false;
-    clearCheckHighlight();
-    var cb = badgeEl && badgeEl.querySelector('.mtarec-btn-check');
-    if (cb) cb.classList.remove('active');
+  function enterPickMode(action) {
+    pickModeAction = action;
+    hideMoreMenu();
+    var btn = badgeEl && badgeEl.querySelector('.mtarec-btn-more');
+    if (btn) btn.classList.add('active');
   }
 
-  function clearCheckHighlight() {
+  function exitPickMode() {
+    pickModeAction = null;
+    clearPickHighlight();
+    var btn = badgeEl && badgeEl.querySelector('.mtarec-btn-more');
+    if (btn) btn.classList.remove('active');
+  }
+
+  function clearPickHighlight() {
     if (highlightedEl) {
       highlightedEl.style.outline = '';
       highlightedEl = null;
     }
+  }
+
+  /* =========================================================
+     MORE  MENU
+     ========================================================= */
+  var MORE_ITEMS = [
+    { action: 'present',         label: '\u2713 Present' },
+    { action: 'not_present',     label: '\u2717 Not Present' },
+    { action: 'visible',         label: '\u25C9 Visible' },
+    { action: 'not_visible',     label: '\u25CC Not Visible' },
+    { action: 'check_presence_to_continue', label: '\u25B7 Check Presence...' },
+    { action: 'end_check_presence_to_continue', label: '\u25A1 End Check Presence' },
+    { action: 'print',           label: '\uD83D\uDDA8 Print' },
+  ];
+
+  function handleMoreItem(action) {
+    if (action === 'end_check_presence_to_continue') {
+      sendStep('', '', 'end_check_presence_to_continue');
+      hideMoreMenu();
+      return;
+    }
+    if (action === 'print') {
+      var msg = prompt('Enter log message:');
+      if (msg != null) {
+        sendStep('', msg, 'print');
+      }
+      hideMoreMenu();
+      return;
+    }
+    enterPickMode(action);
+  }
+
+  function showMoreMenu() {
+    if (mmHideTimer) { clearTimeout(mmHideTimer); mmHideTimer = null; }
+    if (!moreMenuEl) return;
+    moreMenuEl.style.display = 'block';
+  }
+
+  function hideMoreMenu() {
+    if (!moreMenuEl) return;
+    moreMenuEl.style.display = 'none';
+    mmPersistent = false;
+  }
+
+  function scheduleHideMoreMenu() {
+    if (mmPersistent) return;
+    if (mmHideTimer) clearTimeout(mmHideTimer);
+    mmHideTimer = setTimeout(function () {
+      hideMoreMenu();
+      mmHideTimer = null;
+    }, 250);
   }
 
   /* =========================================================
@@ -238,7 +309,7 @@
   }
 
   function stepsToCSV(testName, steps) {
-    var parts = [csvQuote(testName), ''];
+    var parts = [csvQuote(testName)];
     for (var i = 0; i < steps.length; i++) {
       var step = steps[i];
       parts.push(csvQuote(step.xpath || ''), csvQuote(step.value || ''), step.action);
@@ -248,7 +319,7 @@
 
   function escHtml(s) {
     if (!s) return '';
-    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
   function showResultPanel(steps, testName) {
@@ -421,7 +492,7 @@
     var badgeRect = badgeEl.getBoundingClientRect();
     var spaceBelow = window.innerHeight - badgeRect.bottom;
     var spaceAbove = badgeRect.top;
-    var dropH = Math.min(260, locSteps.length * 26 + 20);
+    var dropH = Math.min(300, locSteps.length * 26 + 20);
     dropdownEl.style.top = '';
     dropdownEl.style.bottom = '';
     dropdownEl.style.marginTop = '';
@@ -438,8 +509,6 @@
       dropdownEl.style.maxHeight = Math.max(60, spaceBelow - 8) + 'px';
     }
   }
-
-
 
   /* =========================================================
      REC  BADGE
@@ -493,8 +562,22 @@
       '#' + BADGE_ID + ' .mtarec-btn-stop { font-weight:700; background:rgba(0,0,0,0.2); }',
       '#' + BADGE_ID + ' .mtarec-btn-stop:hover { background:rgba(0,0,0,0.35); }',
       '#' + BADGE_ID + ' .mtarec-btn-undo { font-size:16px; }',
-      '#' + BADGE_ID + ' .mtarec-btn-check { font-weight:700; }',
-      '#' + BADGE_ID + ' .mtarec-btn-check.active { background:#2e7d32; border-color:#4caf50; }',
+      '#' + BADGE_ID + ' .mtarec-btn-more { font-weight:700; font-size:16px; }',
+      '#' + BADGE_ID + ' .mtarec-btn-more.active { background:#2e7d32; border-color:#4caf50; }',
+
+      '#' + BADGE_ID + ' .mtarec-more-menu {',
+      '  display:none; position:absolute; left:50%; bottom:100%; margin-bottom:4px;',
+      '  transform:translateX(-50%);',
+      '  background:#2b2b2b; color:#ddd; border-radius:8px; padding:4px 0;',
+      '  min-width:220px;',
+      '  box-shadow:0 4px 16px rgba(0,0,0,0.5); z-index:2147483647;',
+      '  font:12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
+      '}',
+      '#' + BADGE_ID + ' .mtarec-more-menu .mm-item {',
+      '  padding:6px 14px; cursor:pointer; display:flex; align-items:center; gap:6px;',
+      '  transition:background 0.1s;',
+      '}',
+      '#' + BADGE_ID + ' .mtarec-more-menu .mm-item:hover { background:rgba(255,255,255,0.08); }',
 
       '#' + BADGE_ID + ' .mtarec-dropdown-btn {',
       '  cursor:pointer; padding:3px 8px; border-radius:10px;',
@@ -536,21 +619,28 @@
     badgeEl = document.createElement('div');
     badgeEl.id = BADGE_ID;
 
+    var menuHtml = [];
+    for (var mi = 0; mi < MORE_ITEMS.length; mi++) {
+      menuHtml.push('<div class="mm-item" data-action="' + MORE_ITEMS[mi].action + '">' + MORE_ITEMS[mi].label + '</div>');
+    }
+
     badgeEl.innerHTML = [
       '<span class="mtarec-dots"><b></b><b></b><b></b><b></b><b></b><b></b></span>',
       '<button class="mtarec-btn mtarec-btn-stop">\u25A0</button>',
       '<button class="mtarec-btn mtarec-btn-pause" data-sec="2">+2s</button>',
       '<button class="mtarec-btn mtarec-btn-pause" data-sec="5">+5s</button>',
-      '<button class="mtarec-btn mtarec-btn-check">\u2713</button>',
       '<button class="mtarec-btn mtarec-btn-undo">\u232B</button>',
       '<span class="mtarec-dropdown-btn">',
         'steps: <span class="mtarec-count">0</span>',
         '<span class="arrow">&#x25BC;</span>',
       '</span>',
-      '<div class="mtarec-dropdown"></div>'
+      '<button class="mtarec-btn mtarec-btn-more">\u22EF</button>',
+      '<div class="mtarec-dropdown"></div>',
+      '<div class="mtarec-more-menu">' + menuHtml.join('') + '</div>',
     ].join('');
 
     dropdownEl = badgeEl.querySelector('.mtarec-dropdown');
+    moreMenuEl = badgeEl.querySelector('.mtarec-more-menu');
 
     document.body.appendChild(badgeEl);
 
@@ -573,18 +663,6 @@
       });
     }
 
-    /* --- check element --- */
-    var checkBtn = badgeEl.querySelector('.mtarec-btn-check');
-    checkBtn.addEventListener('click', function (e) {
-      e.stopPropagation();
-      if (checkElementMode) {
-        exitCheckMode();
-      } else {
-        checkElementMode = true;
-        this.classList.add('active');
-      }
-    });
-
     /* --- undo --- */
     badgeEl.querySelector('.mtarec-btn-undo').addEventListener('click', function (e) {
       e.stopPropagation();
@@ -601,13 +679,49 @@
         showDropdown();
       }
     });
+    document.addEventListener('click', onOutsideDropdownClick);
 
-    /* --- close dropdown when clicking outside --- */
-    document.addEventListener('click', function (e) {
-      if (badgeEl && !badgeEl.contains(e.target)) {
-        if (dropdownEl) { dropdownEl.style.display = 'none'; }
+    /* --- more menu --- */
+    var moreBtn = badgeEl.querySelector('.mtarec-btn-more');
+    moreBtn.addEventListener('mouseenter', function () {
+      exitPickMode();
+      showMoreMenu();
+    });
+    moreBtn.addEventListener('mouseleave', function () {
+      if (!mmPersistent) scheduleHideMoreMenu();
+    });
+    moreBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (moreMenuEl.style.display === 'block') {
+        if (mmPersistent) {
+          hideMoreMenu();
+        } else {
+          mmPersistent = true;
+        }
+      } else {
+        exitPickMode();
+        showMoreMenu();
+        mmPersistent = true;
       }
     });
+    moreMenuEl.addEventListener('mouseenter', function () {
+      if (mmHideTimer) { clearTimeout(mmHideTimer); mmHideTimer = null; }
+    });
+    moreMenuEl.addEventListener('mouseleave', function () {
+      if (!mmPersistent) scheduleHideMoreMenu();
+    });
+
+    /* --- more menu items --- */
+    var items = moreMenuEl.querySelectorAll('.mm-item');
+    for (var ii = 0; ii < items.length; ii++) {
+      items[ii].addEventListener('click', function (e) {
+        e.stopPropagation();
+        handleMoreItem(this.getAttribute('data-action'));
+      });
+    }
+
+    /* --- close more menu when clicking outside --- */
+    document.addEventListener('click', onOutsideMoreMenuClick);
 
     /* --- saved position --- */
     chrome.storage.local.get('mtarec_pos', function (r) {
@@ -665,11 +779,26 @@
       } else {
         badgeEl.classList.remove('minimized');
       }
+      badgeEl.style.transform = '';
+      badgeEl.style.transition = '';
       return;
     }
     chrome.storage.local.set({
       mtarec_pos: { left: badgeEl.style.left, top: badgeEl.style.top }
     });
+    badgeEl.style.transition = '';
+  }
+
+  function onOutsideDropdownClick(e) {
+    if (badgeEl && !badgeEl.contains(e.target)) {
+      if (dropdownEl) dropdownEl.style.display = 'none';
+    }
+  }
+
+  function onOutsideMoreMenuClick(e) {
+    if (badgeEl && !badgeEl.contains(e.target)) {
+      hideMoreMenu();
+    }
   }
 
   function removeBadge() {
@@ -678,6 +807,7 @@
     if (badgeEl && badgeEl.parentNode) badgeEl.parentNode.removeChild(badgeEl);
     badgeEl = null;
     dropdownEl = null;
+    moreMenuEl = null;
     locSteps = [];
   }
 
@@ -690,23 +820,28 @@
     locSteps = [];
     removePanel();
     createBadge();
+    var openStep = { xpath: '', value: window.location.href, action: 'open' };
+    locSteps.push(openStep);
+    sendMsg({ type: 'REC_ADD_STEP', step: openStep }, function () { updateStepBtn(); });
     document.addEventListener('click', onClick, true);
     document.addEventListener('change', onChange, true);
     document.addEventListener('keydown', onKeyDown, true);
-    document.addEventListener('mouseover', onCheckHover, true);
-    document.addEventListener('mouseout', onCheckUnhover, true);
+    document.addEventListener('mouseover', onPickHover, true);
+    document.addEventListener('mouseout', onPickUnhover, true);
     window.addEventListener('beforeunload', onBeforeUnload);
   }
 
   function stopRecording() {
     if (!isRecording) return;
     isRecording = false;
-    exitCheckMode();
+    exitPickMode();
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('change', onChange, true);
     document.removeEventListener('keydown', onKeyDown, true);
-    document.removeEventListener('mouseover', onCheckHover, true);
-    document.removeEventListener('mouseout', onCheckUnhover, true);
+    document.removeEventListener('mouseover', onPickHover, true);
+    document.removeEventListener('mouseout', onPickUnhover, true);
+    document.removeEventListener('click', onOutsideDropdownClick);
+    document.removeEventListener('click', onOutsideMoreMenuClick);
     window.removeEventListener('beforeunload', onBeforeUnload);
     removeBadge();
   }
@@ -732,7 +867,6 @@
       default:
         sendResponse({ error: 'unknown' });
     }
-    return true;
   });
 
 })();
