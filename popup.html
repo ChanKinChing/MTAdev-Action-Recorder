@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+  <div class="app" id="app">
+    <header>
+      <span class="logo">MTAdev Action Recorder</span>
+      <span class="status-bar" id="statusBar">
+        <span class="status-dot" id="statusDot"></span>
+        <span id="statusText">Ready</span>
+      </span>
+      <span class="badge">v1.0</span>
+    </header>
+
+    <section class="controls">
+      <div class="field">
+        <label for="testName">Test Case Name</label>
+        <input type="text" id="testName" placeholder="e.g. TC001-Login" value="Untitled">
+      </div>
+
+      <button class="btn btn-record" id="btnRecord">
+        <span id="btnIcon">▶</span>
+        <span id="btnLabel">Start Recording</span>
+      </button>
+    </section>
+
+    <section class="preview" id="previewSection" style="display:none">
+      <div class="preview-header">
+        <span>CSV Preview</span>
+        <span class="step-count" id="finalStepCount">0 steps</span>
+      </div>
+      <textarea id="csvPreview" readonly spellcheck="false"></textarea>
+    </section>
+
+    <section class="actions" id="actionsSection" style="display:none">
+      <button class="btn btn-copy" id="btnCopy">Copy CSV</button>
+      <button class="btn btn-save" id="btnSave">Download .csv</button>
+      <button class="btn btn-new" id="btnNew">New Recording</button>
+    </section>
+
+    <div class="resize-handle" id="resizeHandle"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

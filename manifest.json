@@ -1,0 +1,31 @@
+{
+  "manifest_version": 3,
+  "name": "MTAdev Action Recorder",
+  "short_name": "MTAdev Recorder",
+  "version": "1.0.0",
+  "description": "Record browser actions (click / type / dropdown) and export as MTAdev-compatible CSV for Selenium testing",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "downloads"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "MTAdev Recorder",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "background": {
+    "service_worker": "bg_service_worker.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
