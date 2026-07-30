@@ -14,6 +14,7 @@
   let dragOffX = 0, dragOffY = 0;
   let locSteps = [];
   let playSteps = [];
+  let recordStartUrl = '';
   let isPlaying = false;
   let playAbort = false;
   let isMinimized = false;
@@ -405,6 +406,44 @@
      ========================================================= */
   function startPlayback() {
     if (isPlaying || playSteps.length === 0) return;
+
+    if (isRecording) {
+      isRecording = false;
+      exitPickMode();
+      document.removeEventListener('click', onClick, true);
+      document.removeEventListener('change', onChange, true);
+      document.removeEventListener('keydown', onKeyDown, true);
+      document.removeEventListener('mouseover', onPickHover, true);
+      document.removeEventListener('mouseout', onPickUnhover, true);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    }
+
+    var steps = playSteps.slice();
+    if (!steps[0] || steps[0].action !== 'open') {
+      steps.unshift({ action: 'open', xpath: '', value: recordStartUrl || window.location.href, el: null });
+    }
+
+    var targetUrl = recordStartUrl || window.location.href;
+    for (var si = 0; si < steps.length; si++) {
+      if (steps[si].action === 'open') { targetUrl = steps[si].value; break; }
+    }
+
+    sendMsg({ type: 'REC_PLAY_NEW_TAB', steps: steps, url: targetUrl });
+    showToast('\u25B6 Playing in new tab...');
+    setTimeout(hideToast, 2000);
+
+    isRecording = true;
+    setBadgeMode('recording');
+    document.addEventListener('click', onClick, true);
+    document.addEventListener('change', onChange, true);
+    document.addEventListener('keydown', onKeyDown, true);
+    document.addEventListener('mouseover', onPickHover, true);
+    document.addEventListener('mouseout', onPickUnhover, true);
+    window.addEventListener('beforeunload', onBeforeUnload);
+  }
+
+  function executeLocalPlayback() {
+    if (playSteps.length === 0) return;
     isPlaying = true;
     playAbort = false;
     var idx = 0;
@@ -425,7 +464,6 @@
         setTimeout(next, 500);
       });
     }
-
     next();
   }
 
@@ -443,16 +481,6 @@
     if (!playAbort) {
       showToast('\u25C0 Resuming recording...');
       setTimeout(hideToast, 1000);
-    }
-    if (!isRecording) {
-      isRecording = true;
-      setBadgeMode('recording');
-      document.addEventListener('click', onClick, true);
-      document.addEventListener('change', onChange, true);
-      document.addEventListener('keydown', onKeyDown, true);
-      document.addEventListener('mouseover', onPickHover, true);
-      document.addEventListener('mouseout', onPickUnhover, true);
-      window.addEventListener('beforeunload', onBeforeUnload);
     }
   }
 
@@ -749,8 +777,7 @@
     panelEl.querySelector('.btn-play').addEventListener('click', function () {
       removePanel();
       if (!badgeEl) createBadge();
-      setBadgeMode('idle');
-      setTimeout(startPlayback, 300);
+      startPlayback();
     });
     panelEl.querySelector('.btn-record').addEventListener('click', function () {
       removePanel();
@@ -886,9 +913,11 @@
       '  padding:7px 10px; border-radius:26px;',
       '  box-shadow:0 3px 12px rgba(200,35,44,0.45);',
       '  display:flex; align-items:center; gap:5px;',
+      '  overflow:hidden; transition:width 0.2s ease;',
       '  user-select:none; white-space:nowrap; cursor:default;',
       '}',
       '#' + BADGE_ID + ' * { all:revert; }',
+      '#' + BADGE_ID + '.minimized { overflow:hidden; white-space:nowrap; direction:rtl; }',
       '#' + BADGE_ID + '.minimized > :not(.mtarec-dots) { display:none !important; }',
       '#' + BADGE_ID + '.mode-idle { background:#2e7d32; box-shadow:0 3px 12px rgba(46,125,50,0.45); }',
       '#' + BADGE_ID + '.mode-playing { background:#1565c0; box-shadow:0 3px 12px rgba(21,101,192,0.45); }',
@@ -1030,12 +1059,8 @@
     badgeEl.querySelector('.mtarec-btn-play').addEventListener('click', function (e) {
       e.stopPropagation();
       if (this.classList.contains('disabled')) return;
-      if (isPlaying) {
-        stopPlayback();
-      } else {
-        if (isRecording) stopRecording();
-        startPlayback();
-      }
+      if (isPlaying) { stopPlayback(); return; }
+      startPlayback();
     });
 
     /* --- dropdown toggle --- */
@@ -1144,12 +1169,25 @@
       isMinimized = !isMinimized;
       if (isMinimized) {
         if (dropdownEl) dropdownEl.style.display = 'none';
+        var rect = badgeEl.getBoundingClientRect();
+        var rightEdge = rect.left + rect.width;
+        var dotsEl = badgeEl.querySelector('.mtarec-dots');
+        var dotsW = (dotsEl ? dotsEl.offsetWidth : 36) + 14;
+        badgeEl.style.left = rect.left + 'px';
+        badgeEl.style.right = 'auto';
+        badgeEl.style.transform = 'none';
+        badgeEl.style.width = rect.width + 'px';
         badgeEl.classList.add('minimized');
+        badgeEl.offsetHeight;
+        badgeEl.style.width = dotsW + 'px';
+        setTimeout(function () {
+          if (badgeEl) { badgeEl.style.width = ''; badgeEl.style.transition = ''; }
+        }, 250);
       } else {
         badgeEl.classList.remove('minimized');
+        badgeEl.style.width = '';
+        badgeEl.style.transition = '';
       }
-      badgeEl.style.transform = '';
-      badgeEl.style.transition = '';
       return;
     }
     chrome.storage.local.set({
@@ -1187,6 +1225,7 @@
     isRecording = true;
     locSteps = [];
     playSteps = [];
+    recordStartUrl = window.location.href;
     removePanel();
     if (!badgeEl) createBadge();
     setBadgeMode('recording');
@@ -1233,9 +1272,17 @@
       case 'REC_PLAY':
         if (!isPlaying && playSteps.length > 0) {
           if (!badgeEl) createBadge();
-          setBadgeMode('idle');
-          setTimeout(startPlayback, 300);
+          startPlayback();
         }
+        sendResponse({ success: true });
+        break;
+      case 'REC_START_PLAYBACK':
+        playSteps = msg.steps.map(function (s) {
+          return { action: s.action, el: null, xpath: s.xpath, value: s.value };
+        });
+        locSteps = playSteps.slice();
+        if (!badgeEl) createBadge();
+        setTimeout(executeLocalPlayback, 500);
         sendResponse({ success: true });
         break;
       case 'REC_STOP_PLAY':

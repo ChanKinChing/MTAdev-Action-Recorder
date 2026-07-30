@@ -91,6 +91,36 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ success: true });
       break;
 
+    case 'REC_PLAY_NEW_TAB':
+      (async () => {
+        try {
+          const { steps, url } = msg;
+          const tab = await chrome.tabs.create({ url, active: true });
+          await new Promise(resolve => {
+            const listener = (tabId, info) => {
+              if (tabId === tab.id && info.status === 'complete') {
+                chrome.tabs.onUpdated.removeListener(listener);
+                resolve();
+              }
+            };
+            chrome.tabs.onUpdated.addListener(listener);
+            setTimeout(() => {
+              chrome.tabs.onUpdated.removeListener(listener);
+              resolve();
+            }, 15000);
+          });
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id },
+            files: ['content_recorder.js']
+          });
+          chrome.tabs.sendMessage(tab.id, { type: 'REC_START_PLAYBACK', steps });
+          sendResponse({ success: true });
+        } catch (err) {
+          sendResponse({ success: false, error: err.message });
+        }
+      })();
+      return true;
+
     default:
       sendResponse({ error: 'unknown type' });
   }
