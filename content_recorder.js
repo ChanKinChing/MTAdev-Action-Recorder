@@ -419,16 +419,21 @@
   function stopPlayback() {
     playAbort = true;
     isPlaying = false;
+    clearHighlight();
     setBadgeMode('idle');
     hideToast();
   }
 
   function endPlayback() {
     isPlaying = false;
+    clearHighlight();
     setBadgeMode('idle');
     if (!playAbort) {
       showToast('\u2705 Playback complete');
-      setTimeout(hideToast, 2000);
+      setTimeout(function () {
+        hideToast();
+        if (locSteps.length > 0) showResultPanel(locSteps, '', 'Playback Complete');
+      }, 1500);
     }
   }
 
@@ -459,6 +464,8 @@
     }
     if (ps.action === 'get_text' || ps.action === 'get_attribute_value' || ps.action === 'assert_attribute_value' || ps.action === 'assert_text' || ps.action === 'assert_class') {
       var found = findPlayEl(ps);
+      clearHighlight();
+      if (found) highlightEl(found);
       if (ps.action === 'assert_text') {
         var actual = found ? found.textContent.trim() : '';
         showToast((actual === ps.value ? '\u2705' : '\u26A0') + ' assert_text: "' + actual + '"');
@@ -476,6 +483,8 @@
       done();
       return;
     }
+    clearHighlight();
+    highlightEl(el);
 
     switch (ps.action) {
       case 'click':
@@ -507,7 +516,6 @@
         showToast((el.offsetParent === null ? '\u2705' : '\u26A0') + ' not_visible');
         break;
     }
-    flashEl(el);
     done();
   }
 
@@ -548,6 +556,23 @@
     setTimeout(function () { el.style.outline = orig; }, 400);
   }
 
+  function clearHighlight() {
+    var prev = document.querySelector('[data-mtarec-hl]');
+    if (prev) {
+      prev.style.outline = prev.getAttribute('data-mtarec-hl-orig') || '';
+      prev.removeAttribute('data-mtarec-hl');
+      prev.removeAttribute('data-mtarec-hl-orig');
+    }
+  }
+
+  function highlightEl(el) {
+    if (!el) return;
+    el.setAttribute('data-mtarec-hl-orig', el.style.outline || '');
+    el.style.outline = '3px solid #e53935';
+    el.style.outlineOffset = '1px';
+    el.setAttribute('data-mtarec-hl', '1');
+  }
+
   /* =========================================================
      TOAST  (bottom middle)
      ========================================================= */
@@ -563,8 +588,8 @@
         'z-index:2147483647; background:#1e1e1e; color:#eee;',
         'font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
         'padding:8px 18px; border-radius:20px;',
-        'box-shadow:0 3px 12px rgba(0,0,0,0.4);',
-        'border:1px solid #444;',
+        'box-shadow:0 0 14px rgba(229,57,53,0.6);',
+        'border:2px solid #e53935;',
         'pointer-events:none; white-space:nowrap;',
         'transition:opacity 0.2s;',
       ].join(' ');
@@ -616,7 +641,7 @@
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
   }
 
-  function showResultPanel(steps, testName) {
+  function showResultPanel(steps, testName, title) {
     if (panelEl) panelEl.remove();
 
     var csv = stepsToCSV(testName || 'Untitled', steps);
@@ -666,6 +691,8 @@
       '#' + id + ' .ftr button:hover { background:#3a3a3a; }',
       '#' + id + ' .ftr .btn-copy { background:#1a6dc8; border-color:#1a6dc8; }',
       '#' + id + ' .ftr .btn-copy:hover { background:#1f7ee6; }',
+      '#' + id + ' .ftr .btn-record { background:#2e7d32; border-color:#2e7d32; }',
+      '#' + id + ' .ftr .btn-record:hover { background:#388e3c; }',
       '#' + id + ' .ftr .btn-close { margin-left:auto; background:transparent; border-color:transparent; color:#888; }',
       '#' + id + ' .ftr .btn-close:hover { color:#eee; }',
     ].join('\n');
@@ -683,13 +710,14 @@
     panelEl.id = id;
     panelEl.innerHTML = [
       '<div class="hdr">',
-        '<span class="title">Recording Complete</span>',
+        '<span class="title">' + (title || 'Recording Complete') + '</span>',
         '<span class="count">' + steps.length + ' step(s)</span>',
         '<button class="btn-x">\u00D7</button>',
       '</div>',
       '<div class="list">' + listHtml.join('') + '</div>',
       '<div class="ftr">',
         '<button class="btn-play">\u25B6 Play</button>',
+        '<button class="btn-record">\u25C0 Continue Recording</button>',
         '<button class="btn-copy">Copy CSV</button>',
         '<button class="btn-save">Download</button>',
         '<button class="btn-close">Close</button>',
@@ -704,6 +732,10 @@
       if (!badgeEl) createBadge();
       setBadgeMode('idle');
       setTimeout(startPlayback, 300);
+    });
+    panelEl.querySelector('.btn-record').addEventListener('click', function () {
+      removePanel();
+      startRecording();
     });
     panelEl.querySelector('.btn-copy').addEventListener('click', function () {
       navigator.clipboard.writeText(csv).then(function () {
