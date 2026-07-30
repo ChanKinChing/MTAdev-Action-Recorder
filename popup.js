@@ -116,6 +116,7 @@ async function startRecording() {
     await chrome.tabs.sendMessage(currentTabId, { type: 'REC_START_RECORDING' }).catch(function () {});
 
     setRecordingUI(true);
+    window.close();
   } catch (err) {
     setStatus('Error: ' + err.message, 'ready');
   }
@@ -206,6 +207,16 @@ $('btnRecord').addEventListener('click', async function () {
 
 $('btnCopy').addEventListener('click', copyCSV);
 $('btnSave').addEventListener('click', downloadCSV);
+
+$('btnPlay').addEventListener('click', async function () {
+  try {
+    var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (tabs[0] && tabs[0].id) {
+      await chrome.tabs.sendMessage(tabs[0].id, { type: 'REC_PLAY' }).catch(function () {});
+    }
+    window.close();
+  } catch (_) {}
+});
 
 $('btnNew').addEventListener('click', async function () {
   await chrome.runtime.sendMessage({ type: 'REC_CLEAR' });

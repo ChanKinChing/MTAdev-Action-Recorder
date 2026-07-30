@@ -127,6 +127,13 @@ header {
 
 .btn-record.recording:hover { background: #b01a22; }
 
+.btn-play {
+  background: #2e7d32;
+  color: #fff;
+}
+
+.btn-play:hover { background: #256b29; }
+
 .btn-copy {
   background: #4a90d9;
   color: #fff;

@@ -66,6 +66,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ count: state.steps.length });
       break;
 
+    case 'REC_UPDATE_STEP':
+      if (msg.index >= 0 && msg.index < state.steps.length && msg.step) {
+        state.steps[msg.index] = msg.step;
+        saveState();
+      }
+      sendResponse({ success: true });
+      break;
+
     case 'REC_GET_STATE':
       sendResponse({
         isRecording: state.isRecording,

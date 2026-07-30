@@ -13,6 +13,9 @@
   let isDragging = false;
   let dragOffX = 0, dragOffY = 0;
   let locSteps = [];
+  let playSteps = [];
+  let isPlaying = false;
+  let playAbort = false;
   let isMinimized = false;
   let dragStarted = false;
   let pickModeAction = null;
@@ -112,9 +115,48 @@
     if (pickModeAction) {
       e.preventDefault();
       e.stopPropagation();
+      var xpath = generateXPath(el);
       var val = '';
-      if (pickModeAction === 'check_presence_to_continue') val = 'present';
-      sendStep(generateXPath(el), val, pickModeAction);
+      switch (pickModeAction) {
+        case 'check_presence_to_continue':
+          val = 'present';
+          break;
+        case 'assert_text':
+          val = prompt('Expected text:');
+          if (val == null) { exitPickMode(); return; }
+          break;
+        case 'assert_attribute_value':
+          var attrName = prompt('Attribute name:');
+          if (attrName == null) { exitPickMode(); return; }
+          var expVal = prompt('Expected value:');
+          if (expVal == null) { exitPickMode(); return; }
+          xpath = xpath + '/@' + attrName;
+          val = expVal;
+          break;
+        case 'assert_class':
+          val = prompt('Expected class:');
+          if (val == null) { exitPickMode(); return; }
+          break;
+        case 'get_text':
+          val = prompt('Variable name:');
+          if (val == null) { exitPickMode(); return; }
+          break;
+        case 'get_attribute_value':
+          var attrName2 = prompt('Attribute name:');
+          if (attrName2 == null) { exitPickMode(); return; }
+          var varName = prompt('Variable name:');
+          if (varName == null) { exitPickMode(); return; }
+          xpath = xpath + '/@' + attrName2;
+          val = varName;
+          break;
+        case 'check':
+          val = prompt('Check or uncheck?', 'check');
+          if (val == null) { exitPickMode(); return; }
+          sendStep(xpath, val, 'click', el);
+          exitPickMode();
+          return;
+      }
+      sendStep(xpath, val, pickModeAction, el);
       exitPickMode();
       return;
     }
@@ -123,11 +165,11 @@
     if (tag === 'input') {
       const t = (el.getAttribute('type') || 'text').toLowerCase();
       if (['checkbox', 'radio'].includes(t)) {
-        sendStep(generateXPath(el), '', 'click');
+        sendStep(generateXPath(el), '', 'click', el);
       }
       return;
     }
-    sendStep(generateXPath(el), '', 'click');
+    sendStep(generateXPath(el), '', 'click', el);
   }
 
   function onChange(e) {
@@ -141,10 +183,10 @@
       } else {
         val = el.selectedIndex >= 0 ? el.options[el.selectedIndex].value : '';
       }
-      sendStep(generateXPath(el), val, 'dropdown');
+      sendStep(generateXPath(el), val, 'dropdown', el);
     } else if (isTextInput(el)) {
       if (el.value) {
-        sendStep(generateXPath(el), el.value, 'type');
+        sendStep(generateXPath(el), el.value, 'type', el);
       }
     }
   }
@@ -152,12 +194,20 @@
   function onKeyDown(e) {
     if (!isRecording) return;
     const controlKeys = ['Tab', 'Enter', 'Escape', 'Delete'];
+    if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      const el = document.activeElement;
+      if (!el || el === document.body || el === document.documentElement) return;
+      if (badgeEl && badgeEl.contains(el)) return;
+      sendStep(generateXPath(el), 'CTRL+A', 'press', el);
+      return;
+    }
     if (!controlKeys.includes(e.key)) return;
     const el = document.activeElement;
     if (!el || el === document.body || el === document.documentElement) return;
     if (badgeEl && badgeEl.contains(el)) return;
     if (e.key === 'Enter' && isTextInput(el)) return;
-    sendStep(generateXPath(el), e.key.toUpperCase(), 'press');
+    sendStep(generateXPath(el), e.key.toUpperCase(), 'press', el);
   }
 
   /* =========================================================
@@ -212,12 +262,26 @@
     { action: 'not_present',     label: '\u2717 Not Present' },
     { action: 'visible',         label: '\u25C9 Visible' },
     { action: 'not_visible',     label: '\u25CC Not Visible' },
+    { action: 'assert_text',     label: '\u2713 Assert Text...' },
+    { action: 'assert_attribute_value', label: '\u2713 Assert Attr Value...' },
+    { action: 'assert_class',    label: '\u2713 Assert Class...' },
+    { action: 'compare_eq',      label: '\u2713 Compare Eq...' },
+    { action: 'get_text',        label: '\uD83D\uDCCB Get Text...' },
+    { action: 'get_attribute_value', label: '\uD83D\uDCCB Get Attr Value...' },
+    { action: 'check',           label: '\u2611 Check...' },
+    { action: 'check_file_download', label: '\u2B07 File Download...' },
     { action: 'check_presence_to_continue', label: '\u25B7 Check Presence...' },
     { action: 'end_check_presence_to_continue', label: '\u25A1 End Check Presence' },
+    { action: 'open',            label: '\uD83C\uDF10 Open Current URL' },
     { action: 'print',           label: '\uD83D\uDDA8 Print' },
   ];
 
   function handleMoreItem(action) {
+    if (action === 'open') {
+      sendStep('', window.location.href, 'open');
+      hideMoreMenu();
+      return;
+    }
     if (action === 'end_check_presence_to_continue') {
       sendStep('', '', 'end_check_presence_to_continue');
       hideMoreMenu();
@@ -225,9 +289,23 @@
     }
     if (action === 'print') {
       var msg = prompt('Enter log message:');
-      if (msg != null) {
-        sendStep('', msg, 'print');
-      }
+      if (msg != null) sendStep('', msg, 'print');
+      hideMoreMenu();
+      return;
+    }
+    if (action === 'compare_eq') {
+      var a = prompt('Variable A name:');
+      if (a == null) { hideMoreMenu(); return; }
+      var b = prompt('Variable B name:');
+      if (b == null) { hideMoreMenu(); return; }
+      sendStep(a, b, 'compare_eq');
+      hideMoreMenu();
+      return;
+    }
+    if (action === 'check_file_download') {
+      var f = prompt('Filename pattern:');
+      if (f == null) { hideMoreMenu(); return; }
+      sendStep('', f, 'check_file_download');
       hideMoreMenu();
       return;
     }
@@ -265,9 +343,10 @@
     } catch (_) {}
   }
 
-  function sendStep(xpath, value, action) {
+  function sendStep(xpath, value, action, el) {
     var step = { xpath: xpath, value: value, action: action, url: window.location.href };
     locSteps.push(step);
+    playSteps.push({ action: action, el: el || null, xpath: xpath, value: value });
     updateStepBtn();
     sendMsg(
       { type: 'REC_ADD_STEP', step: step },
@@ -277,9 +356,24 @@
     );
   }
 
+  function addPauseStep(sec) {
+    var last = locSteps[locSteps.length - 1];
+    if (last && last.action === 'pause') {
+      var newVal = (parseInt(last.value, 10) || 0) + sec;
+      last.value = String(newVal);
+      var lastPlay = playSteps[playSteps.length - 1];
+      if (lastPlay) lastPlay.value = String(newVal);
+      updateStepBtn();
+      sendMsg({ type: 'REC_UPDATE_STEP', index: locSteps.length - 1, step: last });
+      return;
+    }
+    sendStep('', String(sec), 'pause');
+  }
+
   function undoLastStep() {
     if (locSteps.length === 0) return;
     locSteps.pop();
+    playSteps.pop();
     updateStepBtn();
     sendMsg(
       { type: 'REC_DELETE_LAST_STEP' },
@@ -289,11 +383,210 @@
 
   function stopFromBadge() {
     stopRecording();
-    sendMsg({ type: 'REC_STOP' }, function (resp) {
-      if (resp && resp.success && resp.steps) {
-        showResultPanel(resp.steps, resp.testName);
+    sendMsg({ type: 'REC_STOP' });
+  }
+
+  /* =========================================================
+     PLAYBACK  ENGINE
+     ========================================================= */
+  function startPlayback() {
+    if (isPlaying || playSteps.length === 0) return;
+    isPlaying = true;
+    playAbort = false;
+    var idx = 0;
+    setBadgeMode('playing');
+    showToast('\u25B6 [1/' + playSteps.length + '] Starting...');
+
+    function next() {
+      if (playAbort || idx >= playSteps.length) {
+        endPlayback();
+        return;
       }
-    });
+      var ps = playSteps[idx];
+      var label = ps.action + (ps.xpath ? ' ' + truncatePath(ps.xpath) : '');
+      if (label.length > 45) label = label.slice(0, 42) + '...';
+      showToast('\u25B6 [' + (idx + 1) + '/' + playSteps.length + '] ' + label);
+      executePlayStep(ps, idx, function () {
+        idx++;
+        setTimeout(next, 500);
+      });
+    }
+
+    next();
+  }
+
+  function stopPlayback() {
+    playAbort = true;
+    isPlaying = false;
+    setBadgeMode('idle');
+    hideToast();
+  }
+
+  function endPlayback() {
+    isPlaying = false;
+    setBadgeMode('idle');
+    if (!playAbort) {
+      showToast('\u2705 Playback complete');
+      setTimeout(hideToast, 2000);
+    }
+  }
+
+  function executePlayStep(ps, idx, done) {
+    if (ps.action === 'pause') {
+      var ms = (parseInt(ps.value, 10) || 1) * 1000;
+      setTimeout(done, ms);
+      return;
+    }
+    if (ps.action === 'open' || ps.action === 'compare_eq' || ps.action === 'check_file_download') {
+      done();
+      return;
+    }
+    if (ps.action === 'check_presence_to_continue') {
+      if (!findPlayEl(ps)) {
+        idx = skipCheckBlock(idx);
+      }
+      done();
+      return;
+    }
+    if (ps.action === 'end_check_presence_to_continue') {
+      done();
+      return;
+    }
+    if (ps.action === 'print') {
+      done();
+      return;
+    }
+    if (ps.action === 'get_text' || ps.action === 'get_attribute_value' || ps.action === 'assert_attribute_value' || ps.action === 'assert_text' || ps.action === 'assert_class') {
+      var found = findPlayEl(ps);
+      if (ps.action === 'assert_text') {
+        var actual = found ? found.textContent.trim() : '';
+        showToast((actual === ps.value ? '\u2705' : '\u26A0') + ' assert_text: "' + actual + '"');
+      } else if (ps.action === 'assert_class') {
+        var has = found ? found.classList.contains(ps.value) : false;
+        showToast((has ? '\u2705' : '\u26A0') + ' assert_class: ' + ps.value);
+      }
+      done();
+      return;
+    }
+
+    var el = findPlayEl(ps);
+    if (!el) {
+      showToast('\u26A0 Element not found: ' + truncatePath(ps.xpath));
+      done();
+      return;
+    }
+
+    switch (ps.action) {
+      case 'click':
+      case 'check':
+        el.click();
+        break;
+      case 'type':
+        el.value = ps.value;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        break;
+      case 'dropdown':
+        el.value = ps.value;
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        break;
+      case 'press':
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: ps.value, bubbles: true }));
+        break;
+      case 'present':
+        showToast((el ? '\u2705' : '\u26A0') + ' present');
+        break;
+      case 'not_present':
+        showToast((!el ? '\u2705' : '\u26A0') + ' not_present');
+        break;
+      case 'visible':
+        showToast((el.offsetParent !== null ? '\u2705' : '\u26A0') + ' visible');
+        break;
+      case 'not_visible':
+        showToast((el.offsetParent === null ? '\u2705' : '\u26A0') + ' not_visible');
+        break;
+    }
+    flashEl(el);
+    done();
+  }
+
+  function findPlayEl(ps) {
+    if (ps.el && document.contains(ps.el)) return ps.el;
+    if (!ps.xpath) return null;
+    try {
+      var parts = ps.xpath.split('/@');
+      var xp = parts[0];
+      var result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      return result.singleNodeValue;
+    } catch (_) { return null; }
+  }
+
+  function skipCheckBlock(startIdx) {
+    var depth = 1;
+    for (var j = startIdx + 1; j < playSteps.length; j++) {
+      if (playSteps[j].action === 'check_presence_to_continue') depth++;
+      if (playSteps[j].action === 'end_check_presence_to_continue') {
+        depth--;
+        if (depth === 0) return j;
+      }
+    }
+    return playSteps.length;
+  }
+
+  function truncatePath(s) {
+    if (!s) return '';
+    if (s.length > 30) return '...' + s.slice(-27);
+    return s;
+  }
+
+  function flashEl(el) {
+    if (!el) return;
+    var orig = el.style.outline;
+    el.style.outline = '2px solid #4caf50';
+    el.style.outlineOffset = '-2px';
+    setTimeout(function () { el.style.outline = orig; }, 400);
+  }
+
+  /* =========================================================
+     TOAST  (bottom middle)
+     ========================================================= */
+  var TOAST_ID = '__mtarec_toast';
+
+  function showToast(msg) {
+    var el = document.getElementById(TOAST_ID);
+    if (!el) {
+      el = document.createElement('div');
+      el.id = TOAST_ID;
+      el.style.cssText = [
+        'all:initial; position:fixed; bottom:80px; left:50%; transform:translateX(-50%);',
+        'z-index:2147483647; background:#1e1e1e; color:#eee;',
+        'font:13px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
+        'padding:8px 18px; border-radius:20px;',
+        'box-shadow:0 3px 12px rgba(0,0,0,0.4);',
+        'border:1px solid #444;',
+        'pointer-events:none; white-space:nowrap;',
+        'transition:opacity 0.2s;',
+      ].join(' ');
+      document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.opacity = '1';
+  }
+
+  function hideToast() {
+    var el = document.getElementById(TOAST_ID);
+    if (el) el.style.opacity = '0';
+  }
+
+  /* =========================================================
+     IDLE  BADGE  (after recording stops, shows play button)
+     ========================================================= */
+  function setBadgeMode(mode) {
+    if (!badgeEl) return;
+    badgeEl.classList.remove('mode-recording', 'mode-idle', 'mode-playing');
+    badgeEl.classList.add('mode-' + mode);
+    var playBtn = badgeEl.querySelector('.mtarec-btn-play');
+    if (playBtn) playBtn.textContent = (mode === 'playing') ? '\u25A0' : '\u25B6';
   }
 
   /* =========================================================
@@ -395,6 +688,7 @@
       '</div>',
       '<div class="list">' + listHtml.join('') + '</div>',
       '<div class="ftr">',
+        '<button class="btn-play">\u25B6 Play</button>',
         '<button class="btn-copy">Copy CSV</button>',
         '<button class="btn-save">Download</button>',
         '<button class="btn-close">Close</button>',
@@ -404,6 +698,12 @@
 
     panelEl.querySelector('.btn-x').addEventListener('click', function () { removePanel(); });
     panelEl.querySelector('.btn-close').addEventListener('click', function () { removePanel(); });
+    panelEl.querySelector('.btn-play').addEventListener('click', function () {
+      removePanel();
+      if (!badgeEl) createBadge();
+      setBadgeMode('idle');
+      setTimeout(startPlayback, 300);
+    });
     panelEl.querySelector('.btn-copy').addEventListener('click', function () {
       navigator.clipboard.writeText(csv).then(function () {
         var b = panelEl.querySelector('.btn-copy');
@@ -449,13 +749,14 @@
     if (!drop) return;
     var html = [];
     for (var i = 0; i < locSteps.length; i++) {
-      var displayVal = locSteps[i].value || '';
-      if (locSteps[i].xpath && locSteps[i].xpath.length > displayVal.length) displayVal = locSteps[i].xpath;
-      if (displayVal.length > 55) displayVal = displayVal.slice(0, 52) + '...';
+      var step = locSteps[i];
+      var path = step.xpath || '';
+      if (path.length > 27) path = '...' + path.slice(-27);
+      var val = step.value || '';
+      var act = step.action || '';
       html.push('<div class="dr" data-idx="' + i + '">');
       html.push('<span class="dn">' + (i + 1) + '.</span>');
-      html.push('<span class="da">' + escHtml(locSteps[i].action) + '</span>');
-      html.push('<span class="dv">' + escHtml(displayVal) + '</span>');
+      html.push('<span class="dc">' + escHtml(path) + '<span class="dc-sep">, </span>' + escHtml(val) + '<span class="dc-sep">, </span>' + escHtml(act) + '</span>');
       html.push('<button class="del">\u00D7</button>');
       html.push('</div>');
     }
@@ -477,6 +778,7 @@
   function deleteStep(idx) {
     if (idx < 0 || idx >= locSteps.length) return;
     locSteps.splice(idx, 1);
+    playSteps.splice(idx, 1);
     updateStepBtn();
     sendMsg(
       { type: 'REC_DELETE_STEP', index: idx },
@@ -534,6 +836,12 @@
       '}',
       '#' + BADGE_ID + ' * { all:revert; }',
       '#' + BADGE_ID + '.minimized > :not(.mtarec-dots) { display:none !important; }',
+      '#' + BADGE_ID + '.mode-idle { background:#2e7d32; box-shadow:0 3px 12px rgba(46,125,50,0.45); }',
+      '#' + BADGE_ID + '.mode-idle .mode-rec { display:none !important; }',
+      '#' + BADGE_ID + '.mode-playing { background:#1565c0; box-shadow:0 3px 12px rgba(21,101,192,0.45); }',
+      '#' + BADGE_ID + '.mode-playing .mode-rec { display:none !important; }',
+      '#' + BADGE_ID + '.mode-recording .mode-idle { display:none !important; }',
+      '#' + BADGE_ID + '.mode-recording .mode-playing { display:none !important; }',
 
       '#' + BADGE_ID + ' .mtarec-dots {',
       '  cursor:grab; padding:3px 4px;',
@@ -605,8 +913,8 @@
       '}',
       '#' + BADGE_ID + ' .mtarec-dropdown .dr:hover { background:rgba(255,255,255,0.06); }',
       '#' + BADGE_ID + ' .mtarec-dropdown .dn { color:#888; min-width:22px; text-align:right; flex-shrink:0; font-size:10px; }',
-      '#' + BADGE_ID + ' .mtarec-dropdown .da { color:#7cb7ff; min-width:64px; flex-shrink:0; }',
-      '#' + BADGE_ID + ' .mtarec-dropdown .dv { color:#bbb; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }',
+      '#' + BADGE_ID + ' .mtarec-dropdown .dc { color:#ccc; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; font-size:10px; }',
+      '#' + BADGE_ID + ' .mtarec-dropdown .dc-sep { color:#666; }',
       '#' + BADGE_ID + ' .mtarec-dropdown .del {',
       '  all:initial; font:12px/1 sans-serif; cursor:pointer; color:#666;',
       '  padding:0 2px; opacity:0; transition:opacity 0.1s; flex-shrink:0;',
@@ -626,17 +934,17 @@
 
     badgeEl.innerHTML = [
       '<span class="mtarec-dots"><b></b><b></b><b></b><b></b><b></b><b></b></span>',
-      '<button class="mtarec-btn mtarec-btn-stop">\u25A0</button>',
-      '<button class="mtarec-btn mtarec-btn-pause" data-sec="2">+2s</button>',
-      '<button class="mtarec-btn mtarec-btn-pause" data-sec="5">+5s</button>',
-      '<button class="mtarec-btn mtarec-btn-undo">\u232B</button>',
+      '<button class="mtarec-btn mtarec-btn-stop mode-rec">\u25A0</button>',
+      '<button class="mtarec-btn mtarec-btn-pause mode-rec" data-sec="2">+2s</button>',
+      '<button class="mtarec-btn mtarec-btn-undo mode-rec">\u232B</button>',
+      '<button class="mtarec-btn mtarec-btn-play mode-idle mode-playing">\u25B6</button>',
       '<span class="mtarec-dropdown-btn">',
         'steps: <span class="mtarec-count">0</span>',
         '<span class="arrow">&#x25BC;</span>',
       '</span>',
-      '<button class="mtarec-btn mtarec-btn-more">\u22EF</button>',
+      '<button class="mtarec-btn mtarec-btn-more mode-rec">\u22EF</button>',
       '<div class="mtarec-dropdown"></div>',
-      '<div class="mtarec-more-menu">' + menuHtml.join('') + '</div>',
+      '<div class="mtarec-more-menu mode-rec">' + menuHtml.join('') + '</div>',
     ].join('');
 
     dropdownEl = badgeEl.querySelector('.mtarec-dropdown');
@@ -655,18 +963,25 @@
     });
 
     /* --- pause --- */
-    var pauseBtns = badgeEl.querySelectorAll('.mtarec-btn-pause');
-    for (var i = 0; i < pauseBtns.length; i++) {
-      pauseBtns[i].addEventListener('click', function (e) {
-        e.stopPropagation();
-        sendStep('', this.getAttribute('data-sec'), 'pause');
-      });
-    }
+    badgeEl.querySelector('.mtarec-btn-pause').addEventListener('click', function (e) {
+      e.stopPropagation();
+      addPauseStep(parseInt(this.getAttribute('data-sec'), 10));
+    });
 
     /* --- undo --- */
     badgeEl.querySelector('.mtarec-btn-undo').addEventListener('click', function (e) {
       e.stopPropagation();
       undoLastStep();
+    });
+
+    /* --- play --- */
+    badgeEl.querySelector('.mtarec-btn-play').addEventListener('click', function (e) {
+      e.stopPropagation();
+      if (isPlaying) {
+        stopPlayback();
+      } else {
+        startPlayback();
+      }
     });
 
     /* --- dropdown toggle --- */
@@ -808,7 +1123,6 @@
     badgeEl = null;
     dropdownEl = null;
     moreMenuEl = null;
-    locSteps = [];
   }
 
   /* =========================================================
@@ -818,11 +1132,11 @@
     if (isRecording) return;
     isRecording = true;
     locSteps = [];
+    playSteps = [];
     removePanel();
-    createBadge();
-    var openStep = { xpath: '', value: window.location.href, action: 'open' };
-    locSteps.push(openStep);
-    sendMsg({ type: 'REC_ADD_STEP', step: openStep }, function () { updateStepBtn(); });
+    if (!badgeEl) createBadge();
+    setBadgeMode('recording');
+    updateStepBtn();
     document.addEventListener('click', onClick, true);
     document.addEventListener('change', onChange, true);
     document.addEventListener('keydown', onKeyDown, true);
@@ -840,10 +1154,8 @@
     document.removeEventListener('keydown', onKeyDown, true);
     document.removeEventListener('mouseover', onPickHover, true);
     document.removeEventListener('mouseout', onPickUnhover, true);
-    document.removeEventListener('click', onOutsideDropdownClick);
-    document.removeEventListener('click', onOutsideMoreMenuClick);
     window.removeEventListener('beforeunload', onBeforeUnload);
-    removeBadge();
+    setBadgeMode('idle');
   }
 
   function onBeforeUnload(e) {
@@ -862,6 +1174,18 @@
         break;
       case 'REC_STOP_RECORDING':
         stopRecording();
+        sendResponse({ success: true });
+        break;
+      case 'REC_PLAY':
+        if (!isPlaying && playSteps.length > 0) {
+          if (!badgeEl) createBadge();
+          setBadgeMode('idle');
+          setTimeout(startPlayback, 300);
+        }
+        sendResponse({ success: true });
+        break;
+      case 'REC_STOP_PLAY':
+        stopPlayback();
         sendResponse({ success: true });
         break;
       default:
