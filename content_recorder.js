@@ -913,7 +913,7 @@
       '  padding:7px 10px; border-radius:26px;',
       '  box-shadow:0 3px 12px rgba(200,35,44,0.45);',
       '  display:flex; align-items:center; gap:5px;',
-      '  overflow:hidden; transition:width 0.2s ease;',
+      '  transition:width 0.2s ease;',
       '  user-select:none; white-space:nowrap; cursor:default;',
       '}',
       '#' + BADGE_ID + ' * { all:revert; }',
