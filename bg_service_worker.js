@@ -21,6 +21,18 @@ function saveState() {
   chrome.storage.session.set({ mtarec_state: state });
 }
 
+/* --- re-inject content script on tab navigation (handles redirects) --- */
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status !== 'complete') return;
+  chrome.storage.local.get('mtarec_pending_playback', function (data) {
+    if (!data.mtarec_pending_playback || data.mtarec_pending_playback.tabId !== tabId) return;
+    chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content_recorder.js']
+    }).catch(function () {});
+  });
+});
+
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   switch (msg.type) {
 
@@ -96,11 +108,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         try {
           const { steps, url } = msg;
           const tab = await chrome.tabs.create({ url, active: true });
-          await chrome.scripting.executeScript({
+          await chrome.storage.local.set({
+            mtarec_pending_playback: { tabId: tab.id, steps, url, ts: Date.now() }
+          });
+          chrome.scripting.executeScript({
             target: { tabId: tab.id },
             files: ['content_recorder.js']
-          });
-          chrome.tabs.sendMessage(tab.id, { type: 'REC_START_PLAYBACK', steps });
+          }).catch(function () {});
           sendResponse({ success: true });
         } catch (err) {
           sendResponse({ success: false, error: err.message });

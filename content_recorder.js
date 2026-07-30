@@ -24,6 +24,22 @@
   let mmPersistent = false;
   let mmHideTimer = null;
 
+  /* --- pick up pending playback from storage (new tab playback) --- */
+  chrome.storage.local.get('mtarec_pending_playback', function (data) {
+    if (data.mtarec_pending_playback) {
+      var pp = data.mtarec_pending_playback;
+      chrome.storage.local.remove('mtarec_pending_playback');
+      if (pp.steps && pp.steps.length > 0) {
+        playSteps = pp.steps.map(function (s) {
+          return { action: s.action, el: null, xpath: s.xpath, value: s.value };
+        });
+        locSteps = playSteps.slice();
+        if (!badgeEl) createBadge();
+        setTimeout(executeLocalPlayback, 800);
+      }
+    }
+  });
+
   /* =========================================================
      XPATH  GENERATOR
      ========================================================= */
@@ -1267,15 +1283,6 @@
           if (!badgeEl) createBadge();
           startPlayback();
         }
-        sendResponse({ success: true });
-        break;
-      case 'REC_START_PLAYBACK':
-        playSteps = msg.steps.map(function (s) {
-          return { action: s.action, el: null, xpath: s.xpath, value: s.value };
-        });
-        locSteps = playSteps.slice();
-        if (!badgeEl) createBadge();
-        setTimeout(executeLocalPlayback, 500);
         sendResponse({ success: true });
         break;
       case 'REC_STOP_PLAY':
