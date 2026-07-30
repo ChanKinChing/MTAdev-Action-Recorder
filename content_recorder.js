@@ -384,6 +384,7 @@
   function stopFromBadge() {
     stopRecording();
     sendMsg({ type: 'REC_STOP' });
+    if (locSteps.length > 0) showResultPanel(locSteps, '');
   }
 
   /* =========================================================
@@ -741,6 +742,8 @@
       var cnt = btn.querySelector('.mtarec-count');
       if (cnt) cnt.textContent = locSteps.length;
     }
+    var playBtn = badgeEl && badgeEl.querySelector('.mtarec-btn-play');
+    if (playBtn) playBtn.classList.toggle('disabled', locSteps.length === 0);
     var drop = badgeEl && badgeEl.querySelector('.mtarec-dropdown');
     if (drop && drop.style.display === 'block') buildDropdownEl(drop);
   }
@@ -837,11 +840,8 @@
       '#' + BADGE_ID + ' * { all:revert; }',
       '#' + BADGE_ID + '.minimized > :not(.mtarec-dots) { display:none !important; }',
       '#' + BADGE_ID + '.mode-idle { background:#2e7d32; box-shadow:0 3px 12px rgba(46,125,50,0.45); }',
-      '#' + BADGE_ID + '.mode-idle .mode-rec { display:none !important; }',
       '#' + BADGE_ID + '.mode-playing { background:#1565c0; box-shadow:0 3px 12px rgba(21,101,192,0.45); }',
-      '#' + BADGE_ID + '.mode-playing .mode-rec { display:none !important; }',
-      '#' + BADGE_ID + '.mode-recording .mode-idle { display:none !important; }',
-      '#' + BADGE_ID + '.mode-recording .mode-playing { display:none !important; }',
+      '#' + BADGE_ID + ' .mtarec-btn-play.disabled { opacity:0.35; cursor:default; pointer-events:none; }',
 
       '#' + BADGE_ID + ' .mtarec-dots {',
       '  cursor:grab; padding:3px 4px;',
@@ -934,23 +934,24 @@
 
     badgeEl.innerHTML = [
       '<span class="mtarec-dots"><b></b><b></b><b></b><b></b><b></b><b></b></span>',
-      '<button class="mtarec-btn mtarec-btn-stop mode-rec">\u25A0</button>',
-      '<button class="mtarec-btn mtarec-btn-pause mode-rec" data-sec="2">+2s</button>',
-      '<button class="mtarec-btn mtarec-btn-undo mode-rec">\u232B</button>',
-      '<button class="mtarec-btn mtarec-btn-play mode-idle mode-playing">\u25B6</button>',
+      '<button class="mtarec-btn mtarec-btn-stop">\u25A0</button>',
+      '<button class="mtarec-btn mtarec-btn-pause" data-sec="2">+2s</button>',
+      '<button class="mtarec-btn mtarec-btn-undo">\u232B</button>',
+      '<button class="mtarec-btn mtarec-btn-play">\u25B6</button>',
       '<span class="mtarec-dropdown-btn">',
         'steps: <span class="mtarec-count">0</span>',
         '<span class="arrow">&#x25BC;</span>',
       '</span>',
-      '<button class="mtarec-btn mtarec-btn-more mode-rec">\u22EF</button>',
+      '<button class="mtarec-btn mtarec-btn-more">\u22EF</button>',
       '<div class="mtarec-dropdown"></div>',
-      '<div class="mtarec-more-menu mode-rec">' + menuHtml.join('') + '</div>',
+      '<div class="mtarec-more-menu">' + menuHtml.join('') + '</div>',
     ].join('');
 
     dropdownEl = badgeEl.querySelector('.mtarec-dropdown');
     moreMenuEl = badgeEl.querySelector('.mtarec-more-menu');
 
     document.body.appendChild(badgeEl);
+    updateStepBtn();
 
     /* --- drag --- */
     var dots = badgeEl.querySelector('.mtarec-dots');
@@ -977,9 +978,11 @@
     /* --- play --- */
     badgeEl.querySelector('.mtarec-btn-play').addEventListener('click', function (e) {
       e.stopPropagation();
+      if (this.classList.contains('disabled')) return;
       if (isPlaying) {
         stopPlayback();
       } else {
+        if (isRecording) stopRecording();
         startPlayback();
       }
     });
