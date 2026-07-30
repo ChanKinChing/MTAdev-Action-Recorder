@@ -431,6 +431,7 @@
     sendMsg({ type: 'REC_PLAY_NEW_TAB', steps: steps, url: targetUrl });
     showToast('\u25B6 Playing in new tab...');
     setTimeout(hideToast, 2000);
+    isPlaying = true;
 
     isRecording = true;
     setBadgeMode('recording');
@@ -593,14 +594,6 @@
     if (!s) return '';
     if (s.length > 30) return '...' + s.slice(-27);
     return s;
-  }
-
-  function flashEl(el) {
-    if (!el) return;
-    var orig = el.style.outline;
-    el.style.outline = '2px solid #4caf50';
-    el.style.outlineOffset = '-2px';
-    setTimeout(function () { el.style.outline = orig; }, 400);
   }
 
   function clearHighlight() {
