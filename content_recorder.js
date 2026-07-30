@@ -24,6 +24,13 @@
   let mmPersistent = false;
   let mmHideTimer = null;
 
+  function addPlaybackBorder() {
+    var el = document.createElement('div');
+    el.id = '__mtarec_playback_border';
+    el.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;border:5px solid #e53935;pointer-events:none;z-index:2147483646;box-sizing:border-box;';
+    document.body.appendChild(el);
+  }
+
   /* --- pick up pending playback from storage (new tab playback) --- */
   chrome.storage.local.get('mtarec_pending_playback', function (data) {
     if (data.mtarec_pending_playback) {
@@ -34,7 +41,7 @@
           return { action: s.action, el: null, xpath: s.xpath, value: s.value };
         });
         locSteps = playSteps.slice();
-        if (!badgeEl) createBadge();
+        addPlaybackBorder();
         setTimeout(executeLocalPlayback, 800);
       }
     }
