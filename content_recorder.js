@@ -316,6 +316,19 @@
     if (mmHideTimer) { clearTimeout(mmHideTimer); mmHideTimer = null; }
     if (!moreMenuEl) return;
     moreMenuEl.style.display = 'block';
+    var menuH = moreMenuEl.offsetHeight || 400;
+    var badgeRect = badgeEl ? badgeEl.getBoundingClientRect() : null;
+    if (badgeRect && badgeRect.top < menuH) {
+      moreMenuEl.style.bottom = 'auto';
+      moreMenuEl.style.top = '100%';
+      moreMenuEl.style.marginTop = '4px';
+      moreMenuEl.style.marginBottom = '';
+    } else {
+      moreMenuEl.style.bottom = '100%';
+      moreMenuEl.style.top = 'auto';
+      moreMenuEl.style.marginBottom = '4px';
+      moreMenuEl.style.marginTop = '';
+    }
   }
 
   function hideMoreMenu() {
@@ -427,13 +440,19 @@
   function endPlayback() {
     isPlaying = false;
     clearHighlight();
-    setBadgeMode('idle');
     if (!playAbort) {
-      showToast('\u2705 Playback complete');
-      setTimeout(function () {
-        hideToast();
-        if (locSteps.length > 0) showResultPanel(locSteps, '', 'Playback Complete');
-      }, 1500);
+      showToast('\u25C0 Resuming recording...');
+      setTimeout(hideToast, 1000);
+    }
+    if (!isRecording) {
+      isRecording = true;
+      setBadgeMode('recording');
+      document.addEventListener('click', onClick, true);
+      document.addEventListener('change', onChange, true);
+      document.addEventListener('keydown', onKeyDown, true);
+      document.addEventListener('mouseover', onPickHover, true);
+      document.addEventListener('mouseout', onPickUnhover, true);
+      window.addEventListener('beforeunload', onBeforeUnload);
     }
   }
 
@@ -789,7 +808,7 @@
       if (path.length > 27) path = '...' + path.slice(-27);
       var val = step.value || '';
       var act = step.action || '';
-      html.push('<div class="dr" data-idx="' + i + '">');
+      html.push('<div class="dr" data-idx="' + i + '" title="' + escHtml((step.xpath || '') + ', ' + (step.value || '') + ', ' + step.action) + '">');
       html.push('<span class="dn">' + (i + 1) + '.</span>');
       html.push('<span class="dc">' + escHtml(path) + '<span class="dc-sep">, </span>' + escHtml(val) + '<span class="dc-sep">, </span>' + escHtml(act) + '</span>');
       html.push('<button class="del">\u00D7</button>');
