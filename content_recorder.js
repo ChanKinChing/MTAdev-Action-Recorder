@@ -86,10 +86,11 @@
     return tag;
   }
 
-  /* 結構段：從 startIdx 往下走，跳過非目標的 div/span，直接子代用 '/', 跳層用 '//' */
-  function buildStructural(nodes, startIdx, target) {
+  /* 結構段：從 startIdx 往下走，跳過非目標的 div/span，直接子代用 '/', 跳層用 '//'
+     initialLastKept: 前一段最後保留的元素（P2 的錨點），使第一段直接子代輸出 '/' */
+  function buildStructural(nodes, startIdx, target, initialLastKept) {
     var segs = [];
-    var lastKept = null;
+    var lastKept = initialLastKept || null;
     for (var j = startIdx; j < nodes.length; j++) {
       var node = nodes[j];
       var isTarget = (node === target);
@@ -125,7 +126,7 @@
       for (var i = 0; i < nodes.length; i++) {
         if (hasAttrName(nodes[i])) chain.push(attrLocator(nodes[i]));
       }
-      return chain.join('//');
+      return chain.join('');
     }
 
     /* 找所有有 name/id 的祖先 */
@@ -140,8 +141,8 @@
       for (var m = 0; m < namedIdx.length; m++) {
         anchorPath.push(attrLocator(nodes[namedIdx[m]]));
       }
-      var struct = buildStructural(nodes, namedIdx[namedIdx.length - 1] + 1, el);
-      return anchorPath.join('//') + struct;
+      var struct = buildStructural(nodes, namedIdx[namedIdx.length - 1] + 1, el, nodes[namedIdx[namedIdx.length - 1]]);
+      return anchorPath.join('') + struct;
     }
 
     /* P3: 完全無 name/id -> 純結構，根為第一個非 html/body/div/span 的標籤 */
@@ -166,6 +167,19 @@
     return el;
   }
 
+  /* 模擬 /.. 型態：button 有 name/id，但 state class 在父層（如 mailItemTabBtn 的
+     btn-rect-selected / ng-star-inserted），assert_class 目標為父層 -> 以 namedButton/.. 表達 */
+  function stateClassOnParent(el) {
+    if (!el || el.nodeType !== 1) return false;
+    if ((el.tagName || '').toLowerCase() !== 'button') return false;
+    if (!hasAttrName(el)) return false;
+    var p = el.parentElement;
+    if (!p) return false;
+    var pCls = p.getAttribute('class') || '';
+    var eCls = el.getAttribute('class') || '';
+    return /btn-rect|ng-star-inserted/.test(pCls) && !/btn-rect|ng-star-inserted/.test(eCls);
+  }
+
   /* =========================================================
      EVENT  HANDLERS
      ========================================================= */
@@ -187,7 +201,7 @@
     if (pickModeAction) {
       e.preventDefault();
       e.stopPropagation();
-      var clickEl = (pickModeAction === 'click') ? resolveClickTarget(el) : el;
+      var clickEl = (pickModeAction === 'click' || pickModeAction === 'assert_class') ? resolveClickTarget(el) : el;
       var xpath = generateXPath(clickEl);
       var val = '';
       switch (pickModeAction) {
@@ -224,6 +238,7 @@
         case 'assert_class':
           val = prompt('Expected class:');
           if (val == null) { exitPickMode(); return; }
+          if (stateClassOnParent(clickEl)) xpath = xpath + '/..';
           break;
         case 'get_text':
           val = prompt('Variable name:');
@@ -299,7 +314,7 @@
     if (!pickModeAction) return;
     var el = e.target;
     if (badgeEl && badgeEl.contains(el)) return;
-    if (pickModeAction === 'click') el = resolveClickTarget(el) || el;
+    if (pickModeAction === 'click' || pickModeAction === 'assert_class') el = resolveClickTarget(el) || el;
     if (el === highlightedEl) return;
     clearPickHighlight();
     el.setAttribute('data-mtarec-pick-shadow', el.style.boxShadow || '');
