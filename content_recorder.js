@@ -357,50 +357,27 @@
   /* =========================================================
      MORE  MENU
      ========================================================= */
-  var ICONS = {
-    open: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M2.5 8h11M8 2c-2 2-2.5 3.5-2.5 6S6 12 8 14c2-2 2.5-3.5 2.5-6S10 4 8 2"/></svg>',
-    pause: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M5.5 3v10M10.5 3v10"/></svg>',
-    click: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v8.5l2.2-1.6L9.6 12.4l1.4-.7-1.3-2.8 2.8.9Z"/></svg>',
-    type: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="12" height="7" rx="1"/><path d="M5 8h6M5 11h3"/></svg>',
-    dropdown: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6l5 5 5-5"/></svg>',
-    press: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="2" width="10" height="12" rx="1"/><path d="M5.5 12h5"/></svg>',
-    present: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z"/><circle cx="8" cy="8" r="2"/></svg>',
-    not_present: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z"/><path d="M2 2l12 12"/></svg>',
-    visible: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z"/><circle cx="8" cy="8" r="2"/></svg>',
-    not_visible: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8s2.5-4 6-4 6 4 6 4-2.5 4-6 4-6-4-6-4z"/><path d="M2 2l12 12"/></svg>',
-    assert_text: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h8M8 3v10"/></svg>',
-    assert_attribute_value: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5l4 4L6 14H2v-4z"/></svg>',
-    assert_class: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2M10 3h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2"/></svg>',
-    compare_eq: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3 6h10M3 10h10"/></svg>',
-    get_text: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3H5a1 1 0 0 0-1 1v9a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4a1 1 0 0 0-1-1h-1M6 3a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1M8 8l-1.5 1.5L5 8"/></svg>',
-    get_attribute_value: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5l4 4L6 14H2v-4z"/></svg>',
-    check_presence_to_continue: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M5 3l8 5-8 5z"/></svg>',
-    end_check_presence_to_continue: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="4" y="4" width="8" height="8"/></svg>',
-    print: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6V2.5h8V6M4 11H2.5V7h11v4H12M4 13h8v.5h-8zM2.5 7h2M12 11.5h-8"/></svg>',
-    check_file_downloaded: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg>'
-  };
-
   var MORE_ITEMS = [
-    { action: 'open', icon: 'open', label: 'Open' },
-    { action: 'pause', icon: 'pause', label: 'Pause...' },
-    { action: 'click', icon: 'click', label: 'Click...' },
-    { action: 'type', icon: 'type', label: 'Type...' },
-    { action: 'dropdown', icon: 'dropdown', label: 'Dropdown...' },
-    { action: 'press', icon: 'press', label: 'Press Key...' },
-    { action: 'present', icon: 'present', label: 'Present' },
-    { action: 'not_present', icon: 'not_present', label: 'Not Present' },
-    { action: 'visible', icon: 'visible', label: 'Visible' },
-    { action: 'not_visible', icon: 'not_visible', label: 'Not Visible' },
-    { action: 'assert_text', icon: 'assert_text', label: 'Assert Text...' },
-    { action: 'assert_attribute_value', icon: 'assert_attribute_value', label: 'Assert Attr...' },
-    { action: 'assert_class', icon: 'assert_class', label: 'Assert Class...' },
-    { action: 'compare_eq', icon: 'compare_eq', label: 'Compare Eq...' },
-    { action: 'get_text', icon: 'get_text', label: 'Get Text...' },
-    { action: 'get_attribute_value', icon: 'get_attribute_value', label: 'Get Attr...' },
-    { action: 'check_presence_to_continue', icon: 'check_presence_to_continue', label: 'Check Presence...' },
-    { action: 'end_check_presence_to_continue', icon: 'end_check_presence_to_continue', label: 'End Check Presence' },
-    { action: 'print', icon: 'print', label: 'Print...' },
-    { action: 'check_file_downloaded', icon: 'check_file_downloaded', label: 'File Download...' },
+    { action: 'open', emoji: '\u{1F310}', label: 'Open' },
+    { action: 'pause', emoji: '\u23F8\uFE0F', label: 'Pause...' },
+    { action: 'click', emoji: '\u{1F5B1}\uFE0F', label: 'Click...' },
+    { action: 'type', emoji: '\u2328\uFE0F', label: 'Type...' },
+    { action: 'dropdown', emoji: '\u{1F53D}', label: 'Dropdown...' },
+    { action: 'press', emoji: '\u{1F511}', label: 'Press Key...' },
+    { action: 'present', emoji: '\u2705', label: 'Present' },
+    { action: 'not_present', emoji: '\u274C', label: 'Not Present' },
+    { action: 'visible', emoji: '\u{1F441}\uFE0F', label: 'Visible' },
+    { action: 'not_visible', emoji: '\u{1F6AB}', label: 'Not Visible' },
+    { action: 'assert_text', emoji: '\u{1F4DD}', label: 'Assert Text...' },
+    { action: 'assert_attribute_value', emoji: '\u{1F3F7}\uFE0F', label: 'Assert Attr...' },
+    { action: 'assert_class', emoji: '\u{1F3AF}', label: 'Assert Class...' },
+    { action: 'compare_eq', emoji: '\u2696\uFE0F', label: 'Compare Eq...' },
+    { action: 'get_text', emoji: '\u{1F524}', label: 'Get Text...' },
+    { action: 'get_attribute_value', emoji: '\u{1F516}', label: 'Get Attr...' },
+    { action: 'check_presence_to_continue', emoji: '\u{1F504}', label: 'Check Presence...' },
+    { action: 'end_check_presence_to_continue', emoji: '\u23F9\uFE0F', label: 'End Check Presence' },
+    { action: 'print', emoji: '\u{1F5A8}\uFE0F', label: 'Print...' },
+    { action: 'check_file_downloaded', emoji: '\u{1F4E5}', label: 'File Download...' },
   ];
 
   function handleMoreItem(action) {
@@ -1231,11 +1208,8 @@
       '#' + BADGE_ID + ' .mtarec-more-menu .mm-item:hover { background:rgba(255,255,255,0.08); }',
       '#' + BADGE_ID + ' .mtarec-more-menu .mm-icon {',
       '  display:inline-flex !important; align-items:center !important; justify-content:center !important;',
-      '  width:16px !important; height:16px !important; flex-shrink:0 !important;',
-      '}',
-      '#' + BADGE_ID + ' .mtarec-more-menu .mm-icon svg {',
-      '  width:16px !important; height:16px !important; max-width:16px !important; max-height:16px !important;',
-      '  display:block !important; flex-shrink:0 !important;',
+      '  width:18px !important; height:18px !important; flex-shrink:0 !important;',
+      '  font-size:14px !important; line-height:1 !important;',
       '}',
       '#' + BADGE_ID + ' .mtarec-more-menu .mm-icon svg, #' + BADGE_ID + ' .mtarec-more-menu .mm-icon svg * {',
       '  stroke:currentColor !important; fill:none !important; stroke-width:1.5 !important;',
@@ -1288,7 +1262,7 @@
       var item = MORE_ITEMS[mi];
       menuHtml.push(
         '<div class="mm-item" data-action="' + item.action + '">' +
-          '<span class="mm-icon">' + (ICONS[item.icon] || '') + '</span>' +
+          '<span class="mm-icon">' + (item.emoji || '') + '</span>' +
           '<span>' + item.label + '</span>' +
         '</div>'
       );
