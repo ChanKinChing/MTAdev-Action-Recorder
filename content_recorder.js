@@ -147,6 +147,21 @@
         case 'check_presence_to_continue':
           val = 'present';
           break;
+        case 'click':
+          val = '';
+          break;
+        case 'type':
+          val = prompt('Text to type:');
+          if (val == null) { exitPickMode(); return; }
+          break;
+        case 'dropdown':
+          val = prompt('Option value:');
+          if (val == null) { exitPickMode(); return; }
+          break;
+        case 'press':
+          val = prompt('Key to press:');
+          if (val == null) { exitPickMode(); return; }
+          break;
         case 'assert_text':
           val = prompt('Expected text:');
           if (val == null) { exitPickMode(); return; }
@@ -175,12 +190,6 @@
           xpath = xpath + '/@' + attrName2;
           val = varName;
           break;
-        case 'check':
-          val = prompt('Check or uncheck?', 'check');
-          if (val == null) { exitPickMode(); return; }
-          sendStep(xpath, val, 'click', el);
-          exitPickMode();
-          return;
       }
       sendStep(xpath, val, pickModeAction, el);
       exitPickMode();
@@ -290,27 +299,38 @@
      MORE  MENU
      ========================================================= */
   var MORE_ITEMS = [
-    { action: 'present',         label: '\u2713 Present' },
-    { action: 'not_present',     label: '\u2717 Not Present' },
-    { action: 'visible',         label: '\u25C9 Visible' },
-    { action: 'not_visible',     label: '\u25CC Not Visible' },
-    { action: 'assert_text',     label: '\u2713 Assert Text...' },
-    { action: 'assert_attribute_value', label: '\u2713 Assert Attr Value...' },
-    { action: 'assert_class',    label: '\u2713 Assert Class...' },
-    { action: 'compare_eq',      label: '\u2713 Compare Eq...' },
-    { action: 'get_text',        label: '\uD83D\uDCCB Get Text...' },
-    { action: 'get_attribute_value', label: '\uD83D\uDCCB Get Attr Value...' },
-    { action: 'check',           label: '\u2611 Check...' },
-    { action: 'check_file_download', label: '\u2B07 File Download...' },
+    { action: 'open', label: '\uD83C\uDF10 Open' },
+    { action: 'pause', label: '\u23F1 Pause...' },
+    { action: 'click', label: '\uD83D\uDCF1 Click...' },
+    { action: 'type', label: '\u270D Type...' },
+    { action: 'dropdown', label: '\u25BC Dropdown...' },
+    { action: 'press', label: '\u232B Press Key...' },
+    { action: 'present', label: '\u2713 Present' },
+    { action: 'not_present', label: '\u2717 Not Present' },
+    { action: 'visible', label: '\u25C9 Visible' },
+    { action: 'not_visible', label: '\u25CC Not Visible' },
+    { action: 'assert_text', label: '\u2713 Assert Text...' },
+    { action: 'assert_attribute_value', label: '\u2713 Assert Attr...' },
+    { action: 'assert_class', label: '\u2713 Assert Class...' },
+    { action: 'compare_eq', label: '\u2713 Compare Eq...' },
+    { action: 'get_text', label: '\uD83D\uDCCB Get Text...' },
+    { action: 'get_attribute_value', label: '\uD83D\uDCCB Get Attr...' },
     { action: 'check_presence_to_continue', label: '\u25B7 Check Presence...' },
     { action: 'end_check_presence_to_continue', label: '\u25A1 End Check Presence' },
-    { action: 'open',            label: '\uD83C\uDF10 Open Current URL' },
-    { action: 'print',           label: '\uD83D\uDDA8 Print' },
+    { action: 'print', label: '\uD83D\uDDA8 Print...' },
+    { action: 'check_file_downloaded', label: '\u2B07 File Download...' },
   ];
 
   function handleMoreItem(action) {
     if (action === 'open') {
       sendStep('', window.location.href, 'open');
+      hideMoreMenu();
+      return;
+    }
+    if (action === 'pause') {
+      var secs = prompt('Wait seconds:');
+      if (secs == null) { hideMoreMenu(); return; }
+      sendStep('', String(parseInt(secs, 10) || 1), 'pause');
       hideMoreMenu();
       return;
     }
@@ -334,10 +354,10 @@
       hideMoreMenu();
       return;
     }
-    if (action === 'check_file_download') {
+    if (action === 'check_file_downloaded') {
       var f = prompt('Filename pattern:');
       if (f == null) { hideMoreMenu(); return; }
-      sendStep('', f, 'check_file_download');
+      sendStep('', f, 'check_file_downloaded');
       hideMoreMenu();
       return;
     }
@@ -347,7 +367,7 @@
   function showMoreMenu() {
     if (mmHideTimer) { clearTimeout(mmHideTimer); mmHideTimer = null; }
     if (!moreMenuEl) return;
-    moreMenuEl.style.display = 'block';
+    moreMenuEl.style.display = 'grid';
     var menuH = moreMenuEl.offsetHeight || 400;
     var badgeRect = badgeEl ? badgeEl.getBoundingClientRect() : null;
     if (badgeRect && badgeRect.top < menuH) {
@@ -525,7 +545,7 @@
       setTimeout(done, ms);
       return;
     }
-    if (ps.action === 'open' || ps.action === 'compare_eq' || ps.action === 'check_file_download') {
+    if (ps.action === 'open' || ps.action === 'compare_eq' || ps.action === 'check_file_downloaded') {
       done();
       return;
     }
@@ -570,7 +590,6 @@
 
     switch (ps.action) {
       case 'click':
-      case 'check':
         el.click();
         break;
       case 'type':
@@ -1005,14 +1024,16 @@
       '#' + BADGE_ID + ' .mtarec-more-menu {',
       '  display:none; position:absolute; left:50%; bottom:100%; margin-bottom:4px;',
       '  transform:translateX(-50%);',
-      '  background:#2b2b2b; color:#ddd; border-radius:8px; padding:4px 0;',
-      '  min-width:220px;',
+      '  background:#2b2b2b; color:#ddd; border-radius:8px; padding:4px;',
+      '  min-width:300px;',
       '  box-shadow:0 4px 16px rgba(0,0,0,0.5); z-index:2147483647;',
       '  font:12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;',
+      '  grid-template-columns:repeat(2, minmax(0,1fr)); gap:2px;',
       '}',
       '#' + BADGE_ID + ' .mtarec-more-menu .mm-item {',
-      '  padding:6px 14px; cursor:pointer; display:flex; align-items:center; gap:6px;',
-      '  transition:background 0.1s;',
+      '  padding:6px 10px; cursor:pointer; display:flex; align-items:center; gap:6px;',
+      '  transition:background 0.1s; border-radius:4px;',
+      '  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;',
       '}',
       '#' + BADGE_ID + ' .mtarec-more-menu .mm-item:hover { background:rgba(255,255,255,0.08); }',
 
