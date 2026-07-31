@@ -51,73 +51,119 @@
 
   /* =========================================================
      XPATH  GENERATOR
+     MTAdev 格式優先級（依 data/ CSV 使用頻率）:
+     P1 純 name/id 鏈 (89%)  ->  //*[@name="a"]//*[@name="b"]
+     P2 name/id 錨點+結構段 (11%) -> //*[@name="a"]//table/tbody/tr[1]/td[2]
+     P3 純結構 (0.1%)       ->  //table/tbody/tr[1]/td[2]/span
      ========================================================= */
   function esc(val) {
     return val.replace(/"/g, '\\"');
   }
 
-  function generateXPath(el) {
-    if (!el || el === document || el === document.documentElement) return '/html';
-    const tag = (el.tagName || '').toLowerCase();
-    if (!tag) return '';
-
-    if (el.id) {
-      return '//*[@id="' + esc(el.id) + '"]';
-    }
-    if (el.hasAttribute('name')) {
-      const n = el.getAttribute('name');
-      if (n && n.trim() && document.querySelectorAll('[name="' + CSS.escape(n.trim()) + '"]').length === 1) {
-        return '//*[@name="' + esc(n.trim()) + '"]';
-      }
-    }
-    if (el.hasAttribute('data-testid')) {
-      const d = el.getAttribute('data-testid');
-      if (d && d.trim() && document.querySelectorAll('[data-testid="' + CSS.escape(d.trim()) + '"]').length === 1) {
-        return '//*[@data-testid="' + esc(d.trim()) + '"]';
-      }
-    }
-    if (el.hasAttribute('aria-label')) {
-      const a = el.getAttribute('aria-label');
-      if (a && a.trim() && document.querySelectorAll('[aria-label="' + CSS.escape(a.trim()) + '"]').length === 1) {
-        return '//*[@aria-label="' + esc(a.trim()) + '"]';
-      }
-    }
-    if (el.className && typeof el.className === 'string') {
-      const classes = el.className.trim().split(/\s+/).filter(c => c && !c.startsWith('ng-'));
-      for (const c of classes) {
-        try {
-          if (document.querySelectorAll('.' + CSS.escape(c)).length === 1) {
-            return '//*[contains(concat(" ",normalize-space(@class)," ")," ' + esc(c) + ' ")]';
-          }
-        } catch (_) {}
-      }
-    }
-    return buildFullXPath(el);
+  function hasAttrName(el) {
+    if (!el || el.nodeType !== 1 || !el.getAttribute) return false;
+    var id = el.getAttribute('id');
+    var nm = el.getAttribute('name');
+    return (id && id.trim() !== '') || (nm && nm.trim() !== '');
   }
 
-  function buildFullXPath(el) {
-    if (!el || el === document.documentElement || el === document) return '/html';
-    const parts = [];
-    let cur = el;
-    while (cur && cur.nodeType === 1 && cur !== document.documentElement && cur !== document) {
-      let tag = (cur.tagName || '').toLowerCase();
-      if (!tag) break;
-      if (cur.id) {
-        parts.unshift('//*[@id="' + esc(cur.id) + '"]');
-        return parts.join('/');
-      }
-      const parent = cur.parentElement;
-      if (parent) {
-        const siblings = Array.from(parent.children).filter(s => (s.tagName || '').toLowerCase() === tag);
-        if (siblings.length > 1) {
-          const idx = siblings.indexOf(cur) + 1;
-          tag += '[' + idx + ']';
-        }
-      }
-      parts.unshift(tag);
-      cur = parent;
+  function attrLocator(el) {
+    var id = el.getAttribute && el.getAttribute('id');
+    if (id && id.trim() !== '') return '//*[@id="' + esc(id.trim()) + '"]';
+    var nm = el.getAttribute('name');
+    return '//*[@name="' + esc(nm.trim()) + '"]';
+  }
+
+  function tagSegment(el) {
+    var tag = (el.tagName || '').toLowerCase();
+    var parent = el.parentElement;
+    if (parent) {
+      var sibs = Array.prototype.filter.call(parent.children, function (s) {
+        return (s.tagName || '').toLowerCase() === tag;
+      });
+      if (sibs.length > 1) tag += '[' + (sibs.indexOf(el) + 1) + ']';
     }
-    return '/html/' + parts.join('/');
+    return tag;
+  }
+
+  /* 結構段：從 startIdx 往下走，跳過非目標的 div/span，直接子代用 '/', 跳層用 '//' */
+  function buildStructural(nodes, startIdx, target) {
+    var segs = [];
+    var lastKept = null;
+    for (var j = startIdx; j < nodes.length; j++) {
+      var node = nodes[j];
+      var isTarget = (node === target);
+      var tg = (node.tagName || '').toLowerCase();
+      if (!isTarget && (tg === 'div' || tg === 'span')) continue;
+      var seg = tagSegment(node);
+      if (lastKept && node.parentElement === lastKept) {
+        segs.push('/' + seg);
+      } else {
+        segs.push('//' + seg);
+      }
+      lastKept = node;
+    }
+    return segs.join('');
+  }
+
+  function generateXPath(el) {
+    if (!el || el === document || el === document.documentElement) return '/html';
+    var tag = (el.tagName || '').toLowerCase();
+    if (!tag) return '';
+
+    /* 建立 上->下 的節點鏈（不含 html） */
+    var nodes = [];
+    var cur = el;
+    while (cur && cur.nodeType === 1 && cur !== document.documentElement && cur !== document) {
+      nodes.unshift(cur);
+      cur = cur.parentElement;
+    }
+
+    /* P1: 目標本身有 name/id -> 鏈接所有有 name/id 的祖先 + 目標 */
+    if (hasAttrName(el)) {
+      var chain = [];
+      for (var i = 0; i < nodes.length; i++) {
+        if (hasAttrName(nodes[i])) chain.push(attrLocator(nodes[i]));
+      }
+      return chain.join('//');
+    }
+
+    /* 找所有有 name/id 的祖先 */
+    var namedIdx = [];
+    for (var k = 0; k < nodes.length; k++) {
+      if (hasAttrName(nodes[k])) namedIdx.push(k);
+    }
+
+    /* P2: 有 name/id 錨點祖先 -> 錨點鏈 + 結構段 */
+    if (namedIdx.length > 0) {
+      var anchorPath = [];
+      for (var m = 0; m < namedIdx.length; m++) {
+        anchorPath.push(attrLocator(nodes[namedIdx[m]]));
+      }
+      var struct = buildStructural(nodes, namedIdx[namedIdx.length - 1] + 1, el);
+      return anchorPath.join('//') + struct;
+    }
+
+    /* P3: 完全無 name/id -> 純結構，根為第一個非 html/body/div/span 的標籤 */
+    var rootIdx = 0;
+    for (var r = 0; r < nodes.length; r++) {
+      var rt = (nodes[r].tagName || '').toLowerCase();
+      if (rt !== 'html' && rt !== 'body' && rt !== 'div' && rt !== 'span') {
+        rootIdx = r;
+        break;
+      }
+    }
+    return buildStructural(nodes, rootIdx, el);
+  }
+
+  /* 點擊時解析到真正的 button（使用者常點到 button 內的子元素） */
+  function resolveClickTarget(el) {
+    if (!el || el.nodeType !== 1 || !el.closest) return el;
+    var btn = el.closest('button');
+    if (btn) return btn;
+    var rb = el.closest('[role="button"]');
+    if (rb) return rb;
+    return el;
   }
 
   /* =========================================================
@@ -141,7 +187,8 @@
     if (pickModeAction) {
       e.preventDefault();
       e.stopPropagation();
-      var xpath = generateXPath(el);
+      var clickEl = (pickModeAction === 'click') ? resolveClickTarget(el) : el;
+      var xpath = generateXPath(clickEl);
       var val = '';
       switch (pickModeAction) {
         case 'check_presence_to_continue':
@@ -191,7 +238,7 @@
           val = varName;
           break;
       }
-      sendStep(xpath, val, pickModeAction, el);
+      sendStep(xpath, val, pickModeAction, clickEl);
       exitPickMode();
       return;
     }
@@ -200,11 +247,11 @@
     if (tag === 'input') {
       const t = (el.getAttribute('type') || 'text').toLowerCase();
       if (['checkbox', 'radio'].includes(t)) {
-        sendStep(generateXPath(el), '', 'click', el);
+        sendStep(generateXPath(resolveClickTarget(el)), '', 'click', el);
       }
       return;
     }
-    sendStep(generateXPath(el), '', 'click', el);
+    sendStep(generateXPath(resolveClickTarget(el)), '', 'click', el);
   }
 
   function onChange(e) {
@@ -252,6 +299,7 @@
     if (!pickModeAction) return;
     var el = e.target;
     if (badgeEl && badgeEl.contains(el)) return;
+    if (pickModeAction === 'click') el = resolveClickTarget(el) || el;
     if (el === highlightedEl) return;
     clearPickHighlight();
     el.setAttribute('data-mtarec-pick-shadow', el.style.boxShadow || '');
@@ -524,6 +572,7 @@
     playAbort = false;
     var idx = 0;
     setBadgeMode('playing');
+    document.title = 'Play steps:' + playSteps.length;
     showToast('\u25B6 [1/' + playSteps.length + '] Starting...');
 
     function next() {
@@ -532,9 +581,8 @@
         return;
       }
       var ps = playSteps[idx];
-      var label = ps.action + (ps.xpath ? ' ' + truncatePath(ps.xpath) : '');
-      if (label.length > 45) label = label.slice(0, 42) + '...';
-      showToast('\u25B6 [' + (idx + 1) + '/' + playSteps.length + '] ' + label);
+      var line = (ps.xpath || '') + ', ' + (ps.value || '') + ', ' + ps.action;
+      showToast('\u25B6 [' + (idx + 1) + '/' + playSteps.length + '] ' + line);
       executePlayStep(ps, idx, function () {
         idx++;
         waitWhilePaused(function () { setTimeout(next, 500); });
@@ -557,8 +605,8 @@
     isPaused = false;
     clearHighlight();
     if (!playAbort) {
-      showToast('\u25C0 Resuming recording...');
-      setTimeout(hideToast, 1000);
+      document.title = 'Playback complete';
+      showToast('Play back complete');
     }
   }
 
@@ -713,12 +761,13 @@
         'padding:8px 18px; border-radius:20px;',
         'box-shadow:0 0 14px rgba(229,57,53,0.6);',
         'border:2px solid #e53935;',
-        'pointer-events:auto; cursor:pointer; white-space:nowrap;',
+        'pointer-events:auto; cursor:pointer; white-space:normal; max-width:min(720px, calc(100vw - 32px)); line-height:1.5;',
         'transition:opacity 0.2s;',
       ].join(' ');
       document.body.appendChild(el);
       el.addEventListener('click', function () {
         if (isPlaying && !isRecording) togglePause();
+        else if (!isPlaying) hideToast();
       });
     }
     el.textContent = msg;
