@@ -17,12 +17,14 @@
   let recordStartUrl = '';
   let isPlaying = false;
   let playAbort = false;
+  let isPaused = false;
   let isMinimized = false;
   let dragStarted = false;
   let pickModeAction = null;
   let highlightedEl = null;
   let mmPersistent = false;
   let mmHideTimer = null;
+  let dropHideTimer = null;
 
   function addPlaybackBorder() {
     var el = document.createElement('div');
@@ -492,7 +494,7 @@
       showToast('\u25B6 [' + (idx + 1) + '/' + playSteps.length + '] ' + label);
       executePlayStep(ps, idx, function () {
         idx++;
-        setTimeout(next, 500);
+        waitWhilePaused(function () { setTimeout(next, 500); });
       });
     }
     next();
@@ -501,6 +503,7 @@
   function stopPlayback() {
     playAbort = true;
     isPlaying = false;
+    isPaused = false;
     clearHighlight();
     setBadgeMode('idle');
     hideToast();
@@ -508,6 +511,7 @@
 
   function endPlayback() {
     isPlaying = false;
+    isPaused = false;
     clearHighlight();
     if (!playAbort) {
       showToast('\u25C0 Resuming recording...');
@@ -664,10 +668,13 @@
         'padding:8px 18px; border-radius:20px;',
         'box-shadow:0 0 14px rgba(229,57,53,0.6);',
         'border:2px solid #e53935;',
-        'pointer-events:none; white-space:nowrap;',
+        'pointer-events:auto; cursor:pointer; white-space:nowrap;',
         'transition:opacity 0.2s;',
       ].join(' ');
       document.body.appendChild(el);
+      el.addEventListener('click', function () {
+        if (isPlaying && !isRecording) togglePause();
+      });
     }
     el.textContent = msg;
     el.style.opacity = '1';
@@ -676,6 +683,21 @@
   function hideToast() {
     var el = document.getElementById(TOAST_ID);
     if (el) el.style.opacity = '0';
+  }
+
+  function togglePause() {
+    isPaused = !isPaused;
+    if (isPaused) {
+      showToast('\u23F8 Paused - click to resume');
+    } else {
+      showToast('\u25B6 Resuming...');
+      setTimeout(hideToast, 1000);
+    }
+  }
+
+  function waitWhilePaused(cb) {
+    if (!isPaused) { cb(); return; }
+    setTimeout(function () { waitWhilePaused(cb); }, 200);
   }
 
   /* =========================================================
@@ -1042,13 +1064,13 @@
     badgeEl.innerHTML = [
       '<span class="mtarec-dots"><b></b><b></b><b></b><b></b><b></b><b></b></span>',
       '<button class="mtarec-btn mtarec-btn-stop">Stop recording</button>',
-      '<button class="mtarec-btn mtarec-btn-pause" data-sec="2">+2s</button>',
-      '<button class="mtarec-btn mtarec-btn-undo">\u232B</button>',
       '<button class="mtarec-btn mtarec-btn-play">\u25B6</button>',
       '<span class="mtarec-dropdown-btn">',
         'steps: <span class="mtarec-count">0</span>',
         '<span class="arrow">&#x25BC;</span>',
       '</span>',
+      '<button class="mtarec-btn mtarec-btn-pause" data-sec="2">+2s</button>',
+      '<button class="mtarec-btn mtarec-btn-undo">\u232B</button>',
       '<button class="mtarec-btn mtarec-btn-more">\u22EF</button>',
       '<div class="mtarec-dropdown"></div>',
       '<div class="mtarec-more-menu">' + menuHtml.join('') + '</div>',
@@ -1099,6 +1121,26 @@
       } else {
         showDropdown();
       }
+    });
+    function scheduleHideDropdown() {
+      if (dropHideTimer) clearTimeout(dropHideTimer);
+      dropHideTimer = setTimeout(function () {
+        if (dropdownEl) dropdownEl.style.display = 'none';
+        dropHideTimer = null;
+      }, 200);
+    }
+    dropBtn.addEventListener('mouseenter', function () {
+      if (dropHideTimer) { clearTimeout(dropHideTimer); dropHideTimer = null; }
+      if (locSteps.length > 0) showDropdown();
+    });
+    dropBtn.addEventListener('mouseleave', function () {
+      scheduleHideDropdown();
+    });
+    dropdownEl.addEventListener('mouseenter', function () {
+      if (dropHideTimer) { clearTimeout(dropHideTimer); dropHideTimer = null; }
+    });
+    dropdownEl.addEventListener('mouseleave', function () {
+      scheduleHideDropdown();
     });
     document.addEventListener('click', onOutsideDropdownClick);
 

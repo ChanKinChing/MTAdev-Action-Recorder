@@ -29,6 +29,41 @@ function stepsToCSV(testName, steps) {
   return parts.join(',');
 }
 
+function parseCSVLine(text) {
+  var fields = [];
+  var cur = '';
+  var inQuotes = false;
+  for (var i = 0; i < text.length; i++) {
+    var c = text[i];
+    if (inQuotes) {
+      if (c === '"') {
+        if (text[i + 1] === '"') { cur += '"'; i++; }
+        else inQuotes = false;
+      } else cur += c;
+    } else {
+      if (c === '"') inQuotes = true;
+      else if (c === ',') { fields.push(cur); cur = ''; }
+      else cur += c;
+    }
+  }
+  fields.push(cur);
+  return fields;
+}
+
+function parseCSV(text) {
+  var parts = parseCSVLine(String(text).replace(/\r?\n/g, ''));
+  var testName = parts[0] || 'Untitled';
+  var steps = [];
+  for (var i = 1; i + 2 < parts.length; i += 3) {
+    steps.push({
+      xpath: parts[i] || '',
+      value: parts[i + 1] || '',
+      action: parts[i + 2] || ''
+    });
+  }
+  return { testName: testName, steps: steps };
+}
+
 /* =========================================================
    UI  HELPERS
    ========================================================= */
@@ -222,6 +257,50 @@ $('btnNew').addEventListener('click', async function () {
   await chrome.runtime.sendMessage({ type: 'REC_CLEAR' });
   resetUI();
   $('testName').value = 'Untitled';
+});
+
+$('btnScript').addEventListener('click', function () {
+  $('scriptFile').click();
+});
+
+$('scriptFile').addEventListener('change', async function (e) {
+  var file = e.target.files && e.target.files[0];
+  $('scriptFile').value = '';
+  if (!file) return;
+  try {
+    var text = await file.text();
+    var parsed = parseCSV(text);
+    if (!parsed.steps.length) {
+      setStatus('No steps found in CSV', 'ready');
+      return;
+    }
+    var tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    var activeUrl = (tabs[0] && tabs[0].url) || '';
+
+    var targetUrl = '';
+    for (var i = 0; i < parsed.steps.length; i++) {
+      if (parsed.steps[i].action === 'open') { targetUrl = parsed.steps[i].value; break; }
+    }
+    if (!targetUrl) targetUrl = activeUrl;
+    if (!targetUrl) {
+      setStatus('No open step / active URL', 'ready');
+      return;
+    }
+
+    var resp = await chrome.runtime.sendMessage({
+      type: 'REC_PLAY_NEW_TAB',
+      steps: parsed.steps,
+      url: targetUrl
+    });
+    if (resp && resp.success) {
+      setStatus('Playing script...', 'ready');
+    } else {
+      setStatus('Play failed: ' + ((resp && resp.error) || 'unknown'), 'ready');
+    }
+    window.close();
+  } catch (err) {
+    setStatus('Error: ' + err.message, 'ready');
+  }
 });
 
 document.addEventListener('DOMContentLoaded', checkState);

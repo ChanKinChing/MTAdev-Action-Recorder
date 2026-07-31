@@ -127,6 +127,14 @@ header {
 
 .btn-record.recording:hover { background: #b01a22; }
 
+.btn-script {
+  background: #e8890c;
+  color: #fff;
+  margin-top: 6px;
+}
+
+.btn-script:hover { background: #d07a0a; }
+
 .btn-play {
   background: #2e7d32;
   color: #fff;
