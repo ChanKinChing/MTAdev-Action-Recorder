@@ -1231,7 +1231,11 @@
       '  display:inline-flex; align-items:center; justify-content:center;',
       '  width:16px; height:16px; flex-shrink:0;',
       '}',
-      '#' + BADGE_ID + ' .mtarec-more-menu .mm-icon svg { width:16px; height:16px; display:block; stroke:currentColor; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }',
+      '#' + BADGE_ID + ' .mtarec-more-menu .mm-icon svg { width:16px; height:16px; display:block; flex-shrink:0; }',
+      '#' + BADGE_ID + ' .mtarec-more-menu .mm-icon svg, #' + BADGE_ID + ' .mtarec-more-menu .mm-icon svg * {',
+      '  stroke:currentColor !important; fill:none !important; stroke-width:1.5 !important;',
+      '  stroke-linecap:round !important; stroke-linejoin:round !important;',
+      '}',
       '#' + BADGE_ID + ' .mtarec-sep { color:rgba(255,255,255,0.35); font-size:15px; margin:0 1px; user-select:none; }',
 
       '#' + BADGE_ID + ' .mtarec-dropdown-btn {',
