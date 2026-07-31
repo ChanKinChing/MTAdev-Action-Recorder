@@ -51,10 +51,12 @@
 
   /* =========================================================
      XPATH  GENERATOR
-     MTAdev 格式優先級（依 data/ CSV 使用頻率）:
-     P1 純 name/id 鏈 (89%)  ->  //*[@name="a"]//*[@name="b"]
-     P2 name/id 錨點+結構段 (11%) -> //*[@name="a"]//table/tbody/tr[1]/td[2]
-     P3 純結構 (0.1%)       ->  //table/tbody/tr[1]/td[2]/span
+     格式（依 data/ CSV 2087 steps 推導）:
+     R1 目標自身有 name/id      -> //*[@name="x"] 或 //*[@id="x"]（單一，42.6%）
+     R2 目標無但錨點祖先有       -> 全 name/id 鏈 + 結構尾（46.6%）
+     R3 完全無 name/id         -> //table/... 純結構（相對，非 /html 絕對）
+     結構尾規則: 同標籤兄弟帶索引 tr[1]/td[2]; 直接子代 '/tag', 跳層 '//tag'
+     assert_class 目標為 state class 在父層的 button -> 尾綴 /..
      ========================================================= */
   function esc(val) {
     return val.replace(/"/g, '\\"');
@@ -120,22 +122,16 @@
       cur = cur.parentElement;
     }
 
-    /* P1: 目標本身有 name/id -> 鏈接所有有 name/id 的祖先 + 目標 */
-    if (hasAttrName(el)) {
-      var chain = [];
-      for (var i = 0; i < nodes.length; i++) {
-        if (hasAttrName(nodes[i])) chain.push(attrLocator(nodes[i]));
-      }
-      return chain.join('');
-    }
+    /* R1: 目標自身有 name/id -> 單一 locator（不取祖先） */
+    if (hasAttrName(el)) return attrLocator(el);
 
-    /* 找所有有 name/id 的祖先 */
+    /* 找有 name/id 的祖先 */
     var namedIdx = [];
     for (var k = 0; k < nodes.length; k++) {
       if (hasAttrName(nodes[k])) namedIdx.push(k);
     }
 
-    /* P2: 有 name/id 錨點祖先 -> 錨點鏈 + 結構段 */
+    /* R2: 有 name/id 錨點祖先 -> 全錨點鏈 + 結構尾 */
     if (namedIdx.length > 0) {
       var anchorPath = [];
       for (var m = 0; m < namedIdx.length; m++) {
@@ -145,7 +141,7 @@
       return anchorPath.join('') + struct;
     }
 
-    /* P3: 完全無 name/id -> 純結構，根為第一個非 html/body/div/span 的標籤 */
+    /* R3: 完全無 name/id -> 純結構，根為第一個非 html/body/div/span 的標籤 */
     var rootIdx = 0;
     for (var r = 0; r < nodes.length; r++) {
       var rt = (nodes[r].tagName || '').toLowerCase();
