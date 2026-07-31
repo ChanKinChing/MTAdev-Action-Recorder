@@ -699,6 +699,9 @@
   var TOAST_ID = '__mtarec_toast';
 
   function showToast(msg) {
+    if (isPaused && isPlaying && !isRecording) {
+      msg = '\u23F8 Paused - click to resume';
+    }
     var el = document.getElementById(TOAST_ID);
     if (!el) {
       el = document.createElement('div');
@@ -745,12 +748,63 @@
   /* =========================================================
      IDLE  BADGE  (after recording stops, shows play button)
      ========================================================= */
+  var stopGlowRAf = null;
+  var stopGlowOff = 0;
+  var stopGlowLast = 0;
+
+  function stopBtnEl() {
+    return badgeEl ? badgeEl.querySelector('.mtarec-btn-stop') : null;
+  }
+
+  function startStopGlow() {
+    if (stopGlowRAf != null) return;
+    var btn = stopBtnEl();
+    if (!btn) return;
+    var w = btn.offsetWidth || 84;
+    btn.style.setProperty('--pattern-w1', Math.round(w * 0.7) + 'px');
+    btn.style.setProperty('--pattern-w2', Math.round(w * 0.55) + 'px');
+    stopGlowOff = 0;
+    stopGlowLast = 0;
+    stopGlowRAf = requestAnimationFrame(stopGlowTick);
+  }
+
+  function stopGlowTick(ts) {
+    var btn = stopBtnEl();
+    if (!btn || !badgeEl.classList.contains('mode-recording')) {
+      stopGlowRAf = null;
+      return;
+    }
+    if (!stopGlowLast) stopGlowLast = ts;
+    var dt = Math.min((ts - stopGlowLast) / 1000, 0.1);
+    stopGlowLast = ts;
+    stopGlowOff += 90 * dt;
+    var w1 = parseFloat(btn.style.getPropertyValue('--pattern-w1')) || 62;
+    var w2 = parseFloat(btn.style.getPropertyValue('--pattern-w2')) || 48;
+    var g1 = btn.querySelector('.ms-glow');
+    var g2 = btn.querySelector('.ms-glow2');
+    if (g1) g1.style.backgroundPositionX = (-(stopGlowOff % w1)).toFixed(2) + 'px';
+    if (g2) g2.style.backgroundPositionX = (-(stopGlowOff * 1.35 % w2)).toFixed(2) + 'px';
+    stopGlowRAf = requestAnimationFrame(stopGlowTick);
+  }
+
+  function stopStopGlow() {
+    if (stopGlowRAf != null) {
+      cancelAnimationFrame(stopGlowRAf);
+      stopGlowRAf = null;
+    }
+  }
+
   function setBadgeMode(mode) {
     if (!badgeEl) return;
     badgeEl.classList.remove('mode-recording', 'mode-idle', 'mode-playing');
     badgeEl.classList.add('mode-' + mode);
     var playBtn = badgeEl.querySelector('.mtarec-btn-play');
     if (playBtn) playBtn.textContent = (mode === 'playing') ? '\u25A0' : '\u25B6';
+    if (mode === 'recording') {
+      startStopGlow();
+    } else {
+      stopStopGlow();
+    }
   }
 
   /* =========================================================
@@ -801,7 +855,9 @@
       '#' + id + ' .hdr {',
       '  display:flex; align-items:center; gap:10px;',
       '  padding:10px 14px; background:#c8232c; flex-shrink:0;',
+      '  cursor:grab; user-select:none;',
       '}',
+      '#' + id + ' .hdr.dragging { cursor:grabbing; }',
       '#' + id + ' .hdr span.title { font-weight:600; font-size:13px; color:#fff; }',
       '#' + id + ' .hdr span.count { font-size:11px; color:rgba(255,255,255,0.7); margin-left:auto; }',
       '#' + id + ' .hdr button {',
@@ -865,6 +921,31 @@
 
     panelEl.querySelector('.btn-x').addEventListener('click', function () { removePanel(); });
     panelEl.querySelector('.btn-close').addEventListener('click', function () { removePanel(); });
+
+    var hdr = panelEl.querySelector('.hdr');
+    hdr.addEventListener('mousedown', function (e) {
+      if (e.target.tagName === 'BUTTON') return;
+      e.preventDefault();
+      var rect = panelEl.getBoundingClientRect();
+      var offX = e.clientX - rect.left;
+      var offY = e.clientY - rect.top;
+      hdr.classList.add('dragging');
+      function onMove(ev) {
+        var x = Math.max(-panelEl.offsetWidth + 60, Math.min(ev.clientX - offX, window.innerWidth - 20));
+        var y = Math.max(0, Math.min(ev.clientY - offY, window.innerHeight - 40));
+        panelEl.style.left = x + 'px';
+        panelEl.style.top = y + 'px';
+        panelEl.style.right = 'auto';
+        panelEl.style.bottom = 'auto';
+      }
+      function onUp() {
+        hdr.classList.remove('dragging');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
     panelEl.querySelector('.btn-play').addEventListener('click', function () {
       removePanel();
       if (!badgeEl) createBadge();
@@ -1038,9 +1119,35 @@
       '}',
       '#' + BADGE_ID + ' .mtarec-btn:hover { background:rgba(255,255,255,0.28); }',
       '#' + BADGE_ID + ' .mtarec-btn:active { transform:scale(0.93); }',
-      '#' + BADGE_ID + ' .mtarec-btn-stop { font-weight:700; background:rgba(0,0,0,0.2); }',
+      '#' + BADGE_ID + ' .mtarec-btn-stop {',
+      '  position:relative; overflow:hidden; font-weight:700; background:rgba(0,0,0,0.2);',
+      '  /* 流光圖案寬度由 JS 依按鈕寬度動態設定 (--pattern-w1/w2) */',
+      '  --pattern-w1:62px; --pattern-w2:48px;',
+      '}',
       '#' + BADGE_ID + ' .mtarec-btn-stop:hover { background:rgba(0,0,0,0.35); }',
-      '#' + BADGE_ID + '.mode-recording .mtarec-btn-stop { animation:mtarec-rec 1.6s ease-in-out infinite; }',
+      '#' + BADGE_ID + ' .mtarec-btn-stop .ms-layer {',
+      '  position:absolute; inset:0; border-radius:inherit; pointer-events:none; display:block;',
+      '}',
+      '#' + BADGE_ID + ' .mtarec-btn-stop .ms-glow {',
+      '  z-index:1; background-repeat:repeat-x;',
+      '  background-size:var(--pattern-w1) 100%;',
+      '  background-image:linear-gradient(105deg,',
+      '    transparent 0%, transparent 35%, rgba(255,255,255,0.08) 42%,',
+      '    rgba(255,255,255,0.28) 50%, rgba(255,255,255,0.08) 58%,',
+      '    transparent 65%, transparent 100%);',
+      '}',
+      '#' + BADGE_ID + ' .mtarec-btn-stop .ms-glow2 {',
+      '  z-index:2; background-repeat:repeat-x;',
+      '  background-size:var(--pattern-w2) 100%;',
+      '  background-image:linear-gradient(105deg,',
+      '    transparent 0%, transparent 40%, rgba(255,255,255,0.04) 46%,',
+      '    rgba(255,255,255,0.14) 50%, rgba(255,255,255,0.04) 54%,',
+      '    transparent 60%, transparent 100%);',
+      '}',
+      '#' + BADGE_ID + ' .mtarec-btn-stop .ms-txt {',
+      '  position:relative; z-index:4; display:flex; align-items:center; justify-content:center;',
+      '  width:100%; height:100%;',
+      '}',
       '#' + BADGE_ID + ' .mtarec-btn-undo { font-size:16px; }',
       '#' + BADGE_ID + ' .mtarec-btn-more { font-weight:700; font-size:16px; }',
       '#' + BADGE_ID + ' .mtarec-btn-more.active { background:#2e7d32; border-color:#4caf50; }',
@@ -1064,12 +1171,8 @@
       '  display:inline-flex; align-items:center; justify-content:center;',
       '  width:16px; height:16px; flex-shrink:0;',
       '}',
-      '#' + BADGE_ID + ' .mtarec-more-menu .mm-icon svg { width:16px; height:16px; display:block; }',
+      '#' + BADGE_ID + ' .mtarec-more-menu .mm-icon svg { width:16px; height:16px; display:block; stroke:currentColor; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round; }',
       '#' + BADGE_ID + ' .mtarec-sep { color:rgba(255,255,255,0.35); font-size:15px; margin:0 1px; user-select:none; }',
-      '@keyframes mtarec-rec {',
-      '  0%,100% { box-shadow:0 0 0 0 rgba(255,255,255,0.35); }',
-      '  50% { box-shadow:0 0 0 6px rgba(255,255,255,0); }',
-      '}',
 
       '#' + BADGE_ID + ' .mtarec-dropdown-btn {',
       '  cursor:pointer; padding:3px 8px; border-radius:10px;',
@@ -1124,7 +1227,11 @@
 
     badgeEl.innerHTML = [
       '<span class="mtarec-dots"><b></b><b></b><b></b><b></b><b></b><b></b></span>',
-      '<button class="mtarec-btn mtarec-btn-stop">recording</button>',
+      '<button class="mtarec-btn mtarec-btn-stop">',
+        '<span class="ms-layer ms-glow"></span>',
+        '<span class="ms-layer ms-glow2"></span>',
+        '<span class="ms-txt">recording</span>',
+      '</button>',
       '<button class="mtarec-btn mtarec-btn-play">\u25B6</button>',
       '<span class="mtarec-sep">|</span>',
       '<span class="mtarec-dropdown-btn">',

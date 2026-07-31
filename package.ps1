@@ -15,6 +15,7 @@ New-Item -ItemType Directory -Path $output -Force | Out-Null
 
 # Files to include
 $include = @(
+    "install.bat",
     "install_ext.ps1",
     "manifest.json",
     "popup.html",
