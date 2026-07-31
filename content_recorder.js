@@ -506,9 +506,15 @@
   }
 
   function stopFromBadge() {
-    stopRecording();
-    sendMsg({ type: 'REC_STOP' });
-    if (locSteps.length > 0) showResultPanel(locSteps, '');
+    if (badgeEl && badgeEl.classList.contains('mode-recording')) {
+      stopRecording();
+      sendMsg({ type: 'REC_STOP' });
+      if (locSteps.length > 0) showResultPanel(locSteps, '');
+    } else {
+      sendMsg({ type: 'REC_RESUME' }, function () {
+        startRecording(false);
+      });
+    }
   }
 
   /* =========================================================

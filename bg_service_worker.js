@@ -56,6 +56,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ success: true, steps, testName: state.testName });
       break;
 
+    case 'REC_RESUME':
+      if (state.isRecording) {
+        sendResponse({ success: false, error: 'already recording' });
+        return;
+      }
+      state.isRecording = true;
+      saveState();
+      sendResponse({ success: true });
+      break;
+
     case 'REC_ADD_STEP':
       if (!state.isRecording) {
         sendResponse({ count: state.steps.length });
