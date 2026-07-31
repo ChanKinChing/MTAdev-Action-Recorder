@@ -860,6 +860,8 @@
     badgeEl.classList.add('mode-' + mode);
     var playBtn = badgeEl.querySelector('.mtarec-btn-play');
     if (playBtn) playBtn.textContent = (mode === 'playing') ? '\u25A0' : '\u25B6';
+    var stopTxt = badgeEl.querySelector('.mtarec-btn-stop .ms-txt');
+    if (stopTxt) stopTxt.textContent = (mode === 'recording') ? 'recording' : 'stop';
     if (mode === 'recording') {
       startStopGlow();
     } else {
@@ -1151,7 +1153,7 @@
       '#' + BADGE_ID + ' * { all:revert; }',
       '#' + BADGE_ID + '.minimized { overflow:hidden; white-space:nowrap; direction:rtl; }',
       '#' + BADGE_ID + '.minimized > :not(.mtarec-dots) { display:none !important; }',
-      '#' + BADGE_ID + '.mode-idle { background:#2e7d32; box-shadow:0 3px 12px rgba(46,125,50,0.45); }',
+      '#' + BADGE_ID + '.mode-idle { background:#757575; box-shadow:0 3px 12px rgba(117,117,117,0.45); }',
       '#' + BADGE_ID + '.mode-playing { background:#1565c0; box-shadow:0 3px 12px rgba(21,101,192,0.45); }',
       '#' + BADGE_ID + ' .mtarec-btn-play.disabled { opacity:0.35; cursor:default; pointer-events:none; }',
 
