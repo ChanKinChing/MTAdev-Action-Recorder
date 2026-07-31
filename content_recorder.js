@@ -243,8 +243,10 @@
     if (badgeEl && badgeEl.contains(el)) return;
     if (el === highlightedEl) return;
     clearPickHighlight();
+    el.setAttribute('data-mtarec-pick-shadow', el.style.boxShadow || '');
     el.style.outline = '2px solid #ff1744';
     el.style.outlineOffset = '-2px';
+    el.style.boxShadow = '0 0 12px 3px rgba(255,23,68,0.55)';
     highlightedEl = el;
   }
 
@@ -253,6 +255,8 @@
     var el = e.target;
     if (el === highlightedEl) {
       el.style.outline = '';
+      el.style.boxShadow = el.getAttribute('data-mtarec-pick-shadow') || '';
+      el.removeAttribute('data-mtarec-pick-shadow');
       highlightedEl = null;
     }
   }
@@ -274,6 +278,8 @@
   function clearPickHighlight() {
     if (highlightedEl) {
       highlightedEl.style.outline = '';
+      highlightedEl.style.boxShadow = highlightedEl.getAttribute('data-mtarec-pick-shadow') || '';
+      highlightedEl.removeAttribute('data-mtarec-pick-shadow');
       highlightedEl = null;
     }
   }
@@ -455,6 +461,7 @@
     showToast('\u25B6 Playing in new tab...');
     setTimeout(hideToast, 2000);
     isPlaying = true;
+    setTimeout(function () { isPlaying = false; }, 3000);
 
     isRecording = true;
     setBadgeMode('recording');
@@ -623,16 +630,20 @@
     var prev = document.querySelector('[data-mtarec-hl]');
     if (prev) {
       prev.style.outline = prev.getAttribute('data-mtarec-hl-orig') || '';
+      prev.style.boxShadow = prev.getAttribute('data-mtarec-hl-shadow-orig') || '';
       prev.removeAttribute('data-mtarec-hl');
       prev.removeAttribute('data-mtarec-hl-orig');
+      prev.removeAttribute('data-mtarec-hl-shadow-orig');
     }
   }
 
   function highlightEl(el) {
     if (!el) return;
     el.setAttribute('data-mtarec-hl-orig', el.style.outline || '');
+    el.setAttribute('data-mtarec-hl-shadow-orig', el.style.boxShadow || '');
     el.style.outline = '3px solid #e53935';
     el.style.outlineOffset = '1px';
+    el.style.boxShadow = '0 0 12px 3px rgba(229,57,53,0.6)';
     el.setAttribute('data-mtarec-hl', '1');
   }
 
@@ -797,7 +808,7 @@
     });
     panelEl.querySelector('.btn-record').addEventListener('click', function () {
       removePanel();
-      startRecording();
+      startRecording(false);
     });
     panelEl.querySelector('.btn-copy').addEventListener('click', function () {
       navigator.clipboard.writeText(csv).then(function () {
@@ -1030,7 +1041,7 @@
 
     badgeEl.innerHTML = [
       '<span class="mtarec-dots"><b></b><b></b><b></b><b></b><b></b><b></b></span>',
-      '<button class="mtarec-btn mtarec-btn-stop">\u25A0</button>',
+      '<button class="mtarec-btn mtarec-btn-stop">Stop recording</button>',
       '<button class="mtarec-btn mtarec-btn-pause" data-sec="2">+2s</button>',
       '<button class="mtarec-btn mtarec-btn-undo">\u232B</button>',
       '<button class="mtarec-btn mtarec-btn-play">\u25B6</button>',
@@ -1236,12 +1247,14 @@
   /* =========================================================
      RECORDING  CONTROL
      ========================================================= */
-  function startRecording() {
+  function startRecording(clearSteps) {
     if (isRecording) return;
     isRecording = true;
-    locSteps = [];
-    playSteps = [];
-    recordStartUrl = window.location.href;
+    if (clearSteps !== false) {
+      locSteps = [];
+      playSteps = [];
+      recordStartUrl = window.location.href;
+    }
     removePanel();
     if (!badgeEl) createBadge();
     setBadgeMode('recording');
