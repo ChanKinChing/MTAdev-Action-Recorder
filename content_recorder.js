@@ -1166,6 +1166,7 @@
       '#' + BADGE_ID + ' .mtarec-btn:active { transform:scale(0.93); }',
       '#' + BADGE_ID + ' .mtarec-btn-stop {',
       '  position:relative; overflow:hidden; font-weight:700; background:rgba(0,0,0,0.2);',
+      '  width:96px;',
       '  /* 流光圖案寬度由 JS 依按鈕寬度動態設定 (--pattern-w1/w2) */',
       '  --pattern-w1:62px; --pattern-w2:48px;',
       '}',
