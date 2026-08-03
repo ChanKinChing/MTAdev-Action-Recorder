@@ -25,6 +25,7 @@
   let mmPersistent = false;
   let mmHideTimer = null;
   let dropHideTimer = null;
+  let pendingPtr = null;
 
   function addPlaybackBorder() {
     var el = document.createElement('div');
@@ -189,10 +190,66 @@
     return false;
   }
 
+  /* 判斷元素是否該被當成 click 目標錄製（與 onClick 的 input 過濾邏輯一致） */
+  function isClickableTarget(el) {
+    if (!el || el.nodeType !== 1) return false;
+    const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'input') {
+      const t = (el.getAttribute('type') || 'text').toLowerCase();
+      if (['checkbox', 'radio'].includes(t)) return true;
+      return !isTextInput(el);
+    }
+    return true;
+  }
+
+  function clearPendingPtr() {
+    if (pendingPtr) {
+      clearTimeout(pendingPtr.timer);
+      pendingPtr = null;
+    }
+  }
+
+  function flushPendingPtr() {
+    if (!pendingPtr) return;
+    const p = pendingPtr;
+    pendingPtr = null;
+    sendStep(p.xpath, '', 'click', p.el);
+  }
+
+  /* pointerdown 兜底錄製：有些頁面在 mousedown 時就處理動作並移除/重繪按鈕，或抑制 click 事件，
+     導致 document 的 click 永遠不派發。此處先暫存，若短時間內沒收到 click 則補錄。 */
+  function onPointerDown(e) {
+    if (!isRecording) return;
+    if (e.button !== 0) return;
+    const el = e.target;
+    if (!el || el.nodeType !== 1) return;
+    if (badgeEl && badgeEl.contains(el)) return;
+    if (pickModeAction) return;
+    const clickEl = resolveClickTarget(el) || el;
+    if (!isClickableTarget(clickEl)) return;
+    clearPendingPtr();
+    pendingPtr = {
+      xpath: generateXPath(clickEl),
+      el: clickEl,
+      startX: e.clientX,
+      startY: e.clientY,
+      timer: setTimeout(flushPendingPtr, 700)
+    };
+  }
+
+  /* 按下後移動超過 4px 視為拖曳，取消 pending，避免誤錄成 click */
+  function onPointerMoveCancel(e) {
+    if (!pendingPtr) return;
+    if (Math.abs(e.clientX - pendingPtr.startX) > 4 || Math.abs(e.clientY - pendingPtr.startY) > 4) {
+      clearPendingPtr();
+    }
+  }
+
   function onClick(e) {
     if (!isRecording) return;
     const el = e.target;
     if (badgeEl && badgeEl.contains(el)) return;
+    clearPendingPtr();
 
     if (pickModeAction) {
       e.preventDefault();
@@ -220,19 +277,22 @@
           if (val == null) { exitPickMode(); return; }
           break;
         case 'assert_text':
-          val = prompt('Expected text:');
+          val = prompt('Expected text:', clickEl.textContent ? clickEl.textContent.trim() : '');
           if (val == null) { exitPickMode(); return; }
           break;
         case 'assert_attribute_value':
           var attrName = prompt('Attribute name:');
           if (attrName == null) { exitPickMode(); return; }
-          var expVal = prompt('Expected value:');
+          var curAttr = clickEl.getAttribute ? clickEl.getAttribute(attrName) : null;
+          var expVal = prompt('Expected value:', curAttr == null ? '' : curAttr);
           if (expVal == null) { exitPickMode(); return; }
           xpath = xpath + '/@' + attrName;
           val = expVal;
           break;
         case 'assert_class':
-          val = prompt('Expected class:');
+          var classParent = stateClassOnParent(clickEl) ? clickEl.parentElement : clickEl;
+          var curCls = classParent && classParent.getAttribute ? (classParent.getAttribute('class') || '') : '';
+          val = prompt('Expected class:', curCls);
           if (val == null) { exitPickMode(); return; }
           if (stateClassOnParent(clickEl)) xpath = xpath + '/..';
           break;
@@ -258,6 +318,8 @@
     if (tag === 'input') {
       const t = (el.getAttribute('type') || 'text').toLowerCase();
       if (['checkbox', 'radio'].includes(t)) {
+        sendStep(generateXPath(resolveClickTarget(el)), '', 'click', el);
+      } else if (!isTextInput(el)) {
         sendStep(generateXPath(resolveClickTarget(el)), '', 'click', el);
       }
       return;
@@ -526,11 +588,14 @@
     if (isRecording) {
       isRecording = false;
       exitPickMode();
+      clearPendingPtr();
       document.removeEventListener('click', onClick, true);
       document.removeEventListener('change', onChange, true);
       document.removeEventListener('keydown', onKeyDown, true);
       document.removeEventListener('mouseover', onPickHover, true);
       document.removeEventListener('mouseout', onPickUnhover, true);
+      document.removeEventListener('pointerdown', onPointerDown, true);
+      document.removeEventListener('pointermove', onPointerMoveCancel, true);
       window.removeEventListener('beforeunload', onBeforeUnload);
     }
 
@@ -557,6 +622,8 @@
     document.addEventListener('keydown', onKeyDown, true);
     document.addEventListener('mouseover', onPickHover, true);
     document.addEventListener('mouseout', onPickUnhover, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('pointermove', onPointerMoveCancel, true);
     window.addEventListener('beforeunload', onBeforeUnload);
   }
 
@@ -1525,6 +1592,8 @@
     document.addEventListener('keydown', onKeyDown, true);
     document.addEventListener('mouseover', onPickHover, true);
     document.addEventListener('mouseout', onPickUnhover, true);
+    document.addEventListener('pointerdown', onPointerDown, true);
+    document.addEventListener('pointermove', onPointerMoveCancel, true);
     window.addEventListener('beforeunload', onBeforeUnload);
   }
 
@@ -1532,11 +1601,14 @@
     if (!isRecording) return;
     isRecording = false;
     exitPickMode();
+    clearPendingPtr();
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('change', onChange, true);
     document.removeEventListener('keydown', onKeyDown, true);
     document.removeEventListener('mouseover', onPickHover, true);
     document.removeEventListener('mouseout', onPickUnhover, true);
+    document.removeEventListener('pointerdown', onPointerDown, true);
+    document.removeEventListener('pointermove', onPointerMoveCancel, true);
     window.removeEventListener('beforeunload', onBeforeUnload);
     setBadgeMode('idle');
   }
