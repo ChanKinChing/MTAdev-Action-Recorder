@@ -51,12 +51,16 @@
   });
 
   /* =========================================================
-     XPATH  GENERATOR
-     格式（依 data/ CSV 2087 steps 推導）:
-     R1 目標自身有 name/id      -> //*[@name="x"] 或 //*[@id="x"]（單一，42.6%）
-     R2 目標無但錨點祖先有       -> 全 name/id 鏈 + 結構尾（46.6%）
-     R3 完全無 name/id         -> //table/... 純結構（相對，非 /html 絕對）
-     結構尾規則: 同標籤兄弟帶索引 tr[1]/td[2]; 直接子代 '/tag', 跳層 '//tag'
+     XPATH  GENERATOR（九條鐵律，依 data/ CSV 2087 steps 推導）:
+     R1 一律通配符           -> //*[@attr="值"]，不混 tag 前綴
+     R2 屬性優先序           -> id → name → data-* → 事件屬性(button/input 併 and @type) → text() → class
+     R3 候選值含逗號/雙引號   -> 跳過（避免炸 CSV / 破壞解析）
+     R4 禁 contains/starts-with/ends-with（僅精確等於）
+     R5 多條件僅用 and
+     R6 方案A（唯一屬性祖先鏈）-> 全鏈接具唯一屬性祖先，最深在最後，再接結構尾
+     R7 數字索引僅最後手段     -> 同標籤兄弟才加 [n]
+     R8 精確 text()           -> //*[text()="值"]（無屬性 + 固定短文字）
+     R9 ng-if 元素自動補 present（見 sendStep）
      assert_class 目標為 state class 在父層的 button -> 尾綴 /..
      ========================================================= */
   function esc(val) {
@@ -70,13 +74,68 @@
     return (id && id.trim() !== '') || (nm && nm.trim() !== '');
   }
 
-  function attrLocator(el) {
-    var id = el.getAttribute && el.getAttribute('id');
-    if (id && id.trim() !== '') return '//*[@id="' + esc(id.trim()) + '"]';
-    var nm = el.getAttribute('name');
-    return '//*[@name="' + esc(nm.trim()) + '"]';
+  /* R3: 屬性值是否可作為 locator 候選（非空、不含逗號/雙引號） */
+  function usableAttrVal(v) {
+    if (typeof v !== 'string') return false;
+    v = v.trim();
+    if (v === '') return false;
+    if (v.indexOf(',') >= 0) return false;
+    if (v.indexOf('"') >= 0) return false;
+    return true;
   }
 
+  function attrLocator(el, attr) {
+    var v = el.getAttribute && el.getAttribute(attr);
+    if (!usableAttrVal(v)) return null;
+    return '//*[@' + attr + '="' + esc(v.trim()) + '"]';
+  }
+
+  var DATA_TEST_ATTRS = ['data-testid', 'data-test', 'data-qa', 'data-cy', 'data-id'];
+  var EVENT_ATTRS = ['ng-click', '(click)', '@click', 'onclick', 'ng-change', '(change)', '@change', 'onchange'];
+
+  /* R2 屬性層：id → name → data-* → 事件屬性。無可用屬性回 null */
+  function bestAttrLocator(el) {
+    if (!el || el.nodeType !== 1 || !el.getAttribute) return null;
+    var tag = (el.tagName || '').toLowerCase();
+    var l, i;
+    l = attrLocator(el, 'id');
+    if (l) return l;
+    l = attrLocator(el, 'name');
+    if (l) return l;
+    for (i = 0; i < DATA_TEST_ATTRS.length; i++) {
+      l = attrLocator(el, DATA_TEST_ATTRS[i]);
+      if (l) return l;
+    }
+    for (i = 0; i < EVENT_ATTRS.length; i++) {
+      var ev = el.getAttribute(EVENT_ATTRS[i]);
+      if (!usableAttrVal(ev)) continue;
+      var base = '//*[@' + EVENT_ATTRS[i] + '="' + esc(ev.trim()) + '"]';
+      var ty = el.getAttribute('type');
+      if ((tag === 'button' || tag === 'input') && usableAttrVal(ty)) {
+        return base.slice(0, -1) + ' and @type="' + esc(ty.trim()) + '"]';
+      }
+      return base;
+    }
+    return null;
+  }
+
+  /* R2 完整層：屬性優先；無屬性才精確 text()（R8）；最後 class */
+  function bestLocator(el) {
+    if (!el || el.nodeType !== 1) return null;
+    var l = bestAttrLocator(el);
+    if (l) return l;
+    var tx = el.textContent ? el.textContent.trim() : '';
+    if (usableAttrVal(tx) && tx.length <= 40 && el.children.length === 0) {
+      return '//*[text()="' + esc(tx) + '"]';
+    }
+    var cls = el.getAttribute && el.getAttribute('class');
+    if (usableAttrVal(cls)) {
+      return '//*[@class="' + esc(cls.trim()) + '"]';
+    }
+    return null;
+  }
+
+  /* R7: 同標籤兄弟才加 [n] */
   function tagSegment(el) {
     var tag = (el.tagName || '').toLowerCase();
     var parent = el.parentElement;
@@ -89,8 +148,8 @@
     return tag;
   }
 
-  /* 結構段：從 startIdx 往下走，跳過非目標的 div/span，直接子代用 '/', 跳層用 '//'
-     initialLastKept: 前一段最後保留的元素（P2 的錨點），使第一段直接子代輸出 '/' */
+  /* 結構尾：跳過非目標的 div/span；直接子代用 '/', 跳層用 '//'
+     initialLastKept: 前一段最後保留的元素（錨點），使第一段直接子代輸出 '/' */
   function buildStructural(nodes, startIdx, target, initialLastKept) {
     var segs = [];
     var lastKept = initialLastKept || null;
@@ -123,26 +182,26 @@
       cur = cur.parentElement;
     }
 
-    /* R1: 目標自身有 name/id -> 單一 locator（不取祖先） */
-    if (hasAttrName(el)) return attrLocator(el);
+    /* 目標自身有可用 locator -> 單一（R2 完整優先序） */
+    var own = bestLocator(el);
+    if (own) return own;
 
-    /* 找有 name/id 的祖先 */
-    var namedIdx = [];
-    for (var k = 0; k < nodes.length; k++) {
-      if (hasAttrName(nodes[k])) namedIdx.push(k);
-    }
-
-    /* R2: 有 name/id 錨點祖先 -> 全錨點鏈 + 結構尾 */
-    if (namedIdx.length > 0) {
-      var anchorPath = [];
-      for (var m = 0; m < namedIdx.length; m++) {
-        anchorPath.push(attrLocator(nodes[namedIdx[m]]));
+    /* R6 方案A: 全鏈接具唯一屬性祖先（最深最後），再從最深錨點接結構尾 */
+    var anchorIdx = -1;
+    var anchorPath = [];
+    for (var k = 0; k < nodes.length - 1; k++) {
+      var al = bestAttrLocator(nodes[k]);
+      if (al) {
+        anchorPath.push(al);
+        anchorIdx = k;
       }
-      var struct = buildStructural(nodes, namedIdx[namedIdx.length - 1] + 1, el, nodes[namedIdx[namedIdx.length - 1]]);
+    }
+    if (anchorIdx >= 0) {
+      var struct = buildStructural(nodes, anchorIdx + 1, el, nodes[anchorIdx]);
       return anchorPath.join('') + struct;
     }
 
-    /* R3: 完全無 name/id -> 純結構，根為第一個非 html/body/div/span 的標籤 */
+    /* 完全無屬性 -> 純結構，根為第一個非 html/body/div/span 的標籤 */
     var rootIdx = 0;
     for (var r = 0; r < nodes.length; r++) {
       var rt = (nodes[r].tagName || '').toLowerCase();
@@ -327,6 +386,15 @@
     sendStep(generateXPath(resolveClickTarget(el)), '', 'click', el);
   }
 
+  /* dropdown 改錄 option 的 value 屬性：優先 o.getAttribute('value')，無則回退 o.value
+     （o.value 在 option 無 value 屬性時等於顯示文字 label） */
+  function optionValue(o) {
+    if (!o) return '';
+    var v = o.getAttribute ? o.getAttribute('value') : null;
+    if (v !== null && v !== '') return v;
+    return o.value != null ? o.value : '';
+  }
+
   function onChange(e) {
     if (!isRecording) return;
     const el = e.target;
@@ -334,9 +402,9 @@
     if (tag === 'select') {
       var val = '';
       if (el.multiple) {
-        val = Array.from(el.selectedOptions).map(function (o) { return o.value; }).join(';');
+        val = Array.from(el.selectedOptions).map(optionValue).join(';');
       } else {
-        val = el.selectedIndex >= 0 ? el.options[el.selectedIndex].value : '';
+        val = el.selectedIndex >= 0 ? optionValue(el.options[el.selectedIndex]) : '';
       }
       sendStep(generateXPath(el), val, 'dropdown', el);
     } else if (isTextInput(el)) {
@@ -529,10 +597,20 @@
     } catch (_) {}
   }
 
-  function sendStep(xpath, value, action, el) {
-    var step = { xpath: xpath, value: value, action: action, url: window.location.href };
+  /* 規則九：目標自身或任一祖先帶 ng-if / data-ng-if 時，該元素的動作需先確認存在 */
+  function hasNgIf(el) {
+    var cur = el;
+    while (cur && cur.nodeType === 1) {
+      if (cur.hasAttribute && (cur.hasAttribute('ng-if') || cur.hasAttribute('data-ng-if'))) return true;
+      cur = cur.parentElement;
+    }
+    return false;
+  }
+
+  /* 共用 push helper：locSteps / playSteps / UI / 背景三方同步 */
+  function pushStep(step, el) {
     locSteps.push(step);
-    playSteps.push({ action: action, el: el || null, xpath: xpath, value: value });
+    playSteps.push({ action: step.action, el: el || null, xpath: step.xpath, value: step.value });
     updateStepBtn();
     sendMsg(
       { type: 'REC_ADD_STEP', step: step },
@@ -540,6 +618,25 @@
         if (resp) updateStepBtn();
       }
     );
+  }
+
+  function sendStep(xpath, value, action, el) {
+    var step = { xpath: xpath, value: value, action: action, url: window.location.href };
+
+    /* 規則九: click/type/dropdown/press 目標（或祖先）有 ng-if -> 前插 present 檢查，
+       與上一筆同 xpath 的 present 不重複 */
+    if (
+      el &&
+      (action === 'click' || action === 'type' || action === 'dropdown' || action === 'press') &&
+      hasNgIf(el)
+    ) {
+      var last = locSteps[locSteps.length - 1];
+      if (!(last && last.action === 'present' && last.xpath === xpath)) {
+        pushStep({ xpath: xpath, value: '', action: 'present', url: window.location.href }, el);
+      }
+    }
+
+    pushStep(step, el);
   }
 
   function addPauseStep(sec) {
