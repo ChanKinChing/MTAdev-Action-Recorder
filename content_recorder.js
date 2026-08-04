@@ -119,20 +119,24 @@
     return null;
   }
 
-  /* R2 完整層：屬性優先；無屬性才精確 text()（R8）；最後 class */
-  function bestLocator(el) {
-    if (!el || el.nodeType !== 1) return null;
-    var l = bestAttrLocator(el);
-    if (l) return l;
-    var tx = el.textContent ? el.textContent.trim() : '';
-    if (usableAttrVal(tx) && tx.length <= 40 && el.children.length === 0) {
-      return '//*[text()="' + esc(tx) + '"]';
-    }
-    var cls = el.getAttribute && el.getAttribute('class');
-    if (usableAttrVal(cls)) {
-      return '//*[@class="' + esc(cls.trim()) + '"]';
-    }
-    return null;
+  /* ---- 即時 DOM 驗證 --------------------------------------------------
+      record 當下直接在頁面查證：候選路徑是否「唯一」且「就是目標元素」。
+      （Shadow DOM 內元素 document.evaluate 找不到 -> 傳回 false，自動退到結構路徑） */
+  function xpathMatchCount(xp) {
+    try {
+      var parts = xp.split('/@');
+      var snap = document.evaluate(parts[0], document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      return snap.snapshotLength;
+    } catch (_) { return -1; }
+  }
+
+  function isUniqueTo(xp, el) {
+    if (xpathMatchCount(xp) !== 1) return false;
+    try {
+      var parts = xp.split('/@');
+      var r = document.evaluate(parts[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      return r.singleNodeValue === el;
+    } catch (_) { return false; }
   }
 
   /* R7: 同標籤兄弟才加 [n] */
@@ -169,6 +173,31 @@
     return segs.join('');
   }
 
+  /* 兜底：每層都帶索引的結構尾（含 div/span，不跳層），儘量提高唯一性 */
+  function buildIndexedTail(nodes, startIdx, target, initialLastKept) {
+    var segs = [];
+    var lastKept = initialLastKept || null;
+    for (var j = startIdx; j < nodes.length; j++) {
+      var node = nodes[j];
+      var tag = (node.tagName || '').toLowerCase();
+      var seg = tag;
+      var p = node.parentElement;
+      if (p) {
+        var sibs = Array.prototype.filter.call(p.children, function (s) {
+          return (s.tagName || '').toLowerCase() === tag;
+        });
+        seg = tag + '[' + (sibs.indexOf(node) + 1) + ']';
+      }
+      if (lastKept && node.parentElement === lastKept) {
+        segs.push('/' + seg);
+      } else {
+        segs.push('//' + seg);
+      }
+      lastKept = node;
+    }
+    return segs.join('');
+  }
+
   function generateXPath(el) {
     if (!el || el === document || el === document.documentElement) return '/html';
     var tag = (el.tagName || '').toLowerCase();
@@ -182,11 +211,11 @@
       cur = cur.parentElement;
     }
 
-    /* 目標自身有可用 locator -> 單一（R2 完整優先序） */
-    var own = bestLocator(el);
-    if (own) return own;
+    /* ① 目標自身屬性 locator（id/name/data/事件+and @type）-> 驗證唯一才用 */
+    var ownAttr = bestAttrLocator(el);
+    if (ownAttr && isUniqueTo(ownAttr, el)) return ownAttr;
 
-    /* R6 方案A: 全鏈接具唯一屬性祖先（最深最後），再從最深錨點接結構尾 */
+    /* ② 錨點鏈（各祖先屬性 locator）+ 結構尾 -> 驗證唯一才用 */
     var anchorIdx = -1;
     var anchorPath = [];
     for (var k = 0; k < nodes.length - 1; k++) {
@@ -197,20 +226,40 @@
       }
     }
     if (anchorIdx >= 0) {
-      var struct = buildStructural(nodes, anchorIdx + 1, el, nodes[anchorIdx]);
-      return anchorPath.join('') + struct;
+      var chain = anchorPath.join('') + buildStructural(nodes, anchorIdx + 1, el, nodes[anchorIdx]);
+      if (isUniqueTo(chain, el)) return chain;
+      /* ②b 錨點鏈 + 每層索引結構尾 -> 驗證唯一才用 */
+      var chainIdx = anchorPath.join('') + buildIndexedTail(nodes, anchorIdx + 1, el, nodes[anchorIdx]);
+      if (isUniqueTo(chainIdx, el)) return chainIdx;
     }
 
-    /* 完全無屬性 -> 純結構，根為第一個非 html/body/div/span 的標籤 */
-    var rootIdx = 0;
-    for (var r = 0; r < nodes.length; r++) {
-      var rt = (nodes[r].tagName || '').toLowerCase();
-      if (rt !== 'html' && rt !== 'body' && rt !== 'div' && rt !== 'span') {
-        rootIdx = r;
-        break;
+    /* ③ text() 單一（無屬性 locator + 無子元素 + 固定短文字）-> 驗證唯一才用 */
+    var tx = el.textContent ? el.textContent.trim() : '';
+    if (!ownAttr && usableAttrVal(tx) && tx.length <= 40 && el.children.length === 0) {
+      var textLoc = '//*[text()="' + esc(tx) + '"]';
+      if (isUniqueTo(textLoc, el)) return textLoc;
+    }
+
+    /* ④ class 單一 -> 驗證唯一才用（極少命中） */
+    var cls = el.getAttribute && el.getAttribute('class');
+    if (!ownAttr && usableAttrVal(cls)) {
+      var clsLoc = '//*[@class="' + esc(cls.trim()) + '"]';
+      if (isUniqueTo(clsLoc, el)) return clsLoc;
+    }
+
+    /* ⑤ 兜底：最深的「驗證過唯一」屬性祖先作錨 + 每層索引結構尾（相對結構，非 /html 絕對） */
+    for (var q = nodes.length - 1; q >= 0; q--) {
+      var aLoc = bestAttrLocator(nodes[q]);
+      if (aLoc && isUniqueTo(aLoc, nodes[q])) {
+        return aLoc + buildIndexedTail(nodes, q + 1, el, nodes[q]);
       }
     }
-    return buildStructural(nodes, rootIdx, el);
+
+    /* ⑥ 完全無唯一屬性 -> 以 body 為錨的每層索引相對路徑（仍不保證 100%，已最大化精確） */
+    if (nodes[0] && (nodes[0].tagName || '').toLowerCase() === 'body') {
+      return '//body' + buildIndexedTail(nodes, 1, el, nodes[0]);
+    }
+    return '//body' + buildIndexedTail(nodes, 0, el);
   }
 
   /* 點擊時解析到真正的 button（使用者常點到 button 內的子元素） */
