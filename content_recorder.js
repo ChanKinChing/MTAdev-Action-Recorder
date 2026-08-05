@@ -93,6 +93,24 @@
   var DATA_TEST_ATTRS = ['data-testid', 'data-test', 'data-qa', 'data-cy', 'data-id'];
   var EVENT_ATTRS = ['ng-click', '(click)', '@click', 'onclick', 'ng-change', '(change)', '@change', 'onchange'];
 
+  /* 屬性名是合法 NCName 就用 @name，否則（如 Angular 的 (click)/@click）改用 @*[name()="..."]，
+     避免 @(click) 這種 XPath 語法錯誤被 document.evaluate 拋出而永遠驗證失敗 */
+  function attrTest(name) {
+    if (/^[A-Za-z_][A-Za-z0-9_.\-]*$/.test(name)) return '@' + name;
+    return '@*[name()="' + name + '"]';
+  }
+
+  /* 剝離結尾的 /@attr（assert_attribute_value / get_attribute_value 附加）。
+     只用「結尾恰好是 /@ 屬性名」才剝，避免誤切屬性值內含的 /@（如 @data-x="a/@b"） */
+  function stripAttrSuffix(xp) {
+    if (!xp) return xp;
+    var i = xp.lastIndexOf('/@');
+    if (i < 0) return xp;
+    var tail = xp.slice(i + 2);
+    if (/^[\w:.-]+$/.test(tail)) return xp.slice(0, i);
+    return xp;
+  }
+
   /* R2 屬性層：id → name → data-* → 事件屬性。無可用屬性回 null */
   function bestAttrLocator(el) {
     if (!el || el.nodeType !== 1 || !el.getAttribute) return null;
@@ -109,7 +127,7 @@
     for (i = 0; i < EVENT_ATTRS.length; i++) {
       var ev = el.getAttribute(EVENT_ATTRS[i]);
       if (!usableAttrVal(ev)) continue;
-      var base = '//*[@' + EVENT_ATTRS[i] + '="' + esc(ev.trim()) + '"]';
+      var base = '//*[' + attrTest(EVENT_ATTRS[i]) + '="' + esc(ev.trim()) + '"]';
       var ty = el.getAttribute('type');
       if ((tag === 'button' || tag === 'input') && usableAttrVal(ty)) {
         return base.slice(0, -1) + ' and @type="' + esc(ty.trim()) + '"]';
@@ -124,8 +142,7 @@
       （Shadow DOM 內元素 document.evaluate 找不到 -> 傳回 false，自動退到結構路徑） */
   function xpathMatchCount(xp) {
     try {
-      var parts = xp.split('/@');
-      var snap = document.evaluate(parts[0], document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      var snap = document.evaluate(stripAttrSuffix(xp), document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
       return snap.snapshotLength;
     } catch (_) { return -1; }
   }
@@ -133,10 +150,25 @@
   function isUniqueTo(xp, el) {
     if (xpathMatchCount(xp) !== 1) return false;
     try {
-      var parts = xp.split('/@');
-      var r = document.evaluate(parts[0], document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
+      var r = document.evaluate(stripAttrSuffix(xp), document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       return r.singleNodeValue === el;
     } catch (_) { return false; }
+  }
+
+  /* 候選路徑命中多個元素時，用 (xp)[n] 鎖定目標在 document order 的位置。
+     n=目標在快照中的 index+1；產生後再用 isUniqueTo 驗證真的唯一才回傳，否則 null */
+  function indexedVariant(xp, el) {
+    if (!xp) return null;
+    try {
+      var snap = document.evaluate(stripAttrSuffix(xp), document, null, XPathResult.ORDERED_NODE_SNAPSHOT_TYPE, null);
+      for (var i = 0; i < snap.snapshotLength; i++) {
+        if (snap.snapshotItem(i) === el) {
+          var v = '(' + xp + ')[' + (i + 1) + ']';
+          return isUniqueTo(v, el) ? v : null;
+        }
+      }
+    } catch (_) {}
+    return null;
   }
 
   /* R7: 同標籤兄弟才加 [n] */
@@ -211,9 +243,15 @@
       cur = cur.parentElement;
     }
 
-    /* ① 目標自身屬性 locator（id/name/data/事件+and @type）-> 驗證唯一才用 */
+    /* ① 目標自身屬性 locator（id/name/data/事件+and @type）-> 驗證唯一才用；
+       不唯一時嘗試 (locator)[n] 消歧義 */
     var ownAttr = bestAttrLocator(el);
-    if (ownAttr && isUniqueTo(ownAttr, el)) return ownAttr;
+    var ownAttrUnique = !!(ownAttr && isUniqueTo(ownAttr, el));
+    if (ownAttrUnique) return ownAttr;
+    if (ownAttr) {
+      var ownIdx = indexedVariant(ownAttr, el);
+      if (ownIdx) return ownIdx;
+    }
 
     /* ② 錨點鏈（各祖先屬性 locator）+ 結構尾 -> 驗證唯一才用 */
     var anchorIdx = -1;
@@ -231,44 +269,80 @@
       /* ②b 錨點鏈 + 每層索引結構尾 -> 驗證唯一才用 */
       var chainIdx = anchorPath.join('') + buildIndexedTail(nodes, anchorIdx + 1, el, nodes[anchorIdx]);
       if (isUniqueTo(chainIdx, el)) return chainIdx;
+      /* ②c 錨點鏈仍多個命中 -> (chain)[n] 消歧義 */
+      var chainVar = indexedVariant(chainIdx, el);
+      if (chainVar) return chainVar;
     }
 
-    /* ③ text() 單一（無屬性 locator + 無子元素 + 固定短文字）-> 驗證唯一才用 */
-    var tx = el.textContent ? el.textContent.trim() : '';
-    if (!ownAttr && usableAttrVal(tx) && tx.length <= 40 && el.children.length === 0) {
+    /* ③ text() 單一（無唯一屬性 locator + 無子元素 + 固定短文字）-> 驗證唯一才用。
+       text() 要求 text node 完全等於字面值，故需 textContent 無前導/尾隨空白（trim 後等於原值），
+       否則 ' Hello ' 這類元素用 trim 值做 [text()="Hello"] 永遠匹配不到。 */
+    var txRaw = el.textContent ? el.textContent : '';
+    var tx = txRaw.trim();
+    if (!ownAttrUnique && usableAttrVal(tx) && tx.length <= 40 && el.children.length === 0 && txRaw === tx) {
       var textLoc = '//*[text()="' + esc(tx) + '"]';
       if (isUniqueTo(textLoc, el)) return textLoc;
+      var textVar = indexedVariant(textLoc, el);
+      if (textVar) return textVar;
     }
 
     /* ④ class 單一 -> 驗證唯一才用（極少命中） */
     var cls = el.getAttribute && el.getAttribute('class');
-    if (!ownAttr && usableAttrVal(cls)) {
+    if (!ownAttrUnique && usableAttrVal(cls)) {
       var clsLoc = '//*[@class="' + esc(cls.trim()) + '"]';
       if (isUniqueTo(clsLoc, el)) return clsLoc;
+      var clsVar = indexedVariant(clsLoc, el);
+      if (clsVar) return clsVar;
     }
 
-    /* ⑤ 兜底：最深的「驗證過唯一」屬性祖先作錨 + 每層索引結構尾（相對結構，非 /html 絕對） */
+    /* ⑤ 兜底：最深的「驗證過唯一」屬性祖先作錨 + 每層索引結構尾（相對結構，非 /html 絕對）；
+       祖先屬性多個命中時先試 (locator)[n] 錨 */
     for (var q = nodes.length - 1; q >= 0; q--) {
       var aLoc = bestAttrLocator(nodes[q]);
-      if (aLoc && isUniqueTo(aLoc, nodes[q])) {
-        return aLoc + buildIndexedTail(nodes, q + 1, el, nodes[q]);
+      if (aLoc) {
+        if (isUniqueTo(aLoc, nodes[q])) {
+          return aLoc + buildIndexedTail(nodes, q + 1, el, nodes[q]);
+        }
+        var aIdx = indexedVariant(aLoc, nodes[q]);
+        if (aIdx) {
+          return aIdx + buildIndexedTail(nodes, q + 1, el, nodes[q]);
+        }
       }
     }
 
-    /* ⑥ 完全無唯一屬性 -> 以 body 為錨的每層索引相對路徑（仍不保證 100%，已最大化精確） */
-    if (nodes[0] && (nodes[0].tagName || '').toLowerCase() === 'body') {
-      return '//body' + buildIndexedTail(nodes, 1, el, nodes[0]);
+    /* ⑥ 完全無唯一屬性 -> /html 絕對路徑 + 每層同標籤索引，驗證唯一才用。
+       每層都帶索引後必然唯一；若仍失敗（Shadow DOM 等）退回最上層節點相對索引路徑 */
+    var absPath = '//html' + buildIndexedTail(nodes, 0, el);
+    if (isUniqueTo(absPath, el)) return absPath;
+    if (nodes[0]) {
+      return '//' + (nodes[0].tagName || '').toLowerCase() + buildIndexedTail(nodes, 1, el, nodes[0]);
     }
     return '//body' + buildIndexedTail(nodes, 0, el);
   }
 
-  /* 點擊時解析到真正的 button（使用者常點到 button 內的子元素） */
+  /* 點擊時解析到真正負責動作的元素（使用者常點到元素內的子元素/文字）：
+     button → role=button → a[href] → 具 click 事件屬性的元素 → select/input[可點擊] */
   function resolveClickTarget(el) {
     if (!el || el.nodeType !== 1 || !el.closest) return el;
-    var btn = el.closest('button');
-    if (btn) return btn;
-    var rb = el.closest('[role="button"]');
-    if (rb) return rb;
+    var sel = [
+      'button',
+      '[role="button"]',
+      '[role="menuitem"]',
+      'a[href]',
+      '[ng-click]',
+      '[data-ng-click]',
+      '[onclick]',
+      'select',
+      'input:not([type="text"]):not([type="email"]):not([type="password"]):not([type="search"]):not([type="tel"]):not([type="url"]):not([type="number"])'
+    ].join(', ');
+    var t = el.closest(sel);
+    if (t) return t;
+    /* Angular 屬性含括號 (click)，不能放進 CSS 選擇器，手動向上找 */
+    var n = el;
+    while (n && n.nodeType === 1) {
+      if (n.hasAttribute('(click)') || n.hasAttribute('(keyup.enter)')) return n;
+      n = n.parentElement;
+    }
     return el;
   }
 
@@ -302,6 +376,7 @@
   function isClickableTarget(el) {
     if (!el || el.nodeType !== 1) return false;
     const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'select') return false; /* select 由 change 錄成 dropdown，點擊不另錄 */
     if (tag === 'input') {
       const t = (el.getAttribute('type') || 'text').toLowerCase();
       if (['checkbox', 'radio'].includes(t)) return true;
@@ -423,6 +498,12 @@
     }
 
     const tag = (el.tagName || '').toLowerCase();
+    if (tag === 'select') return; /* 由 change 錄 dropdown，click 不另錄 */
+    if (tag === 'label') {
+      /* 點 <label> 時瀏覽器會合成 click 到關聯的 input，避免 label 與 input 各錄一次 */
+      var lblCtrl = el.htmlFor ? document.getElementById(el.htmlFor) : (el.control || null);
+      if (lblCtrl && lblCtrl.tagName && lblCtrl.tagName.toLowerCase() === 'input') return;
+    }
     if (tag === 'input') {
       const t = (el.getAttribute('type') || 'text').toLowerCase();
       if (['checkbox', 'radio'].includes(t)) {
@@ -435,7 +516,16 @@
     sendStep(generateXPath(resolveClickTarget(el)), '', 'click', el);
   }
 
-  /* dropdown 改錄 option 的 value 屬性：優先 o.getAttribute('value')，無則回退 o.value
+  /* dropdown 改錄 option 的可見文字 label（中/英文皆可，避免錄到 value 屬性的
+     string:前綴 或 Hex 代碼）。優先文字，文字為空才回退 value 屬性 */
+  function optionLabel(o) {
+    if (!o) return '';
+    var t = (o.textContent || o.text || '').trim();
+    if (t) return t;
+    return optionValue(o);
+  }
+
+  /* option 的 value 屬性：優先 o.getAttribute('value')，無則回退 o.value
      （o.value 在 option 無 value 屬性時等於顯示文字 label） */
   function optionValue(o) {
     if (!o) return '';
@@ -451,21 +541,36 @@
     if (tag === 'select') {
       var val = '';
       if (el.multiple) {
-        val = Array.from(el.selectedOptions).map(optionValue).join(';');
+        val = Array.from(el.selectedOptions).map(optionLabel).join(';');
       } else {
-        val = el.selectedIndex >= 0 ? optionValue(el.options[el.selectedIndex]) : '';
+        val = el.selectedIndex >= 0 ? optionLabel(el.options[el.selectedIndex]) : '';
       }
       sendStep(generateXPath(el), val, 'dropdown', el);
     } else if (isTextInput(el)) {
+      var xp = generateXPath(el);
       if (el.value) {
-        sendStep(generateXPath(el), el.value, 'type', el);
+        sendStep(xp, el.value, 'type', el);
+      } else if (wasFieldTyped(xp)) {
+        /* 欄位被清空（先前錄過非空 type 的同欄位）-> 補錄空值 type 表達清空 */
+        sendStep(xp, '', 'type', el);
       }
     }
   }
 
+  /* 判斷某欄位是否錄過非空 type（供清空補錄判斷） */
+  function wasFieldTyped(xp) {
+    for (var i = locSteps.length - 1; i >= 0; i--) {
+      var s = locSteps[i];
+      if (s.action === 'type' && s.xpath === xp) return !!s.value;
+      if (s.action === 'dropdown' && s.xpath === xp) return false;
+    }
+    return false;
+  }
+
   function onKeyDown(e) {
     if (!isRecording) return;
-    const controlKeys = ['Tab', 'Enter', 'Escape', 'Delete'];
+    if (pickModeAction) return;
+    const controlKeys = ['Tab', 'Enter', 'Escape', 'Delete', 'Backspace'];
     if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       const el = document.activeElement;
@@ -679,8 +784,14 @@
       (action === 'click' || action === 'type' || action === 'dropdown' || action === 'press') &&
       hasNgIf(el)
     ) {
-      var last = locSteps[locSteps.length - 1];
-      if (!(last && last.action === 'present' && last.xpath === xpath)) {
+      /* 去重：同一 xpath 已存在 present 就不重複插入（掃整個 locSteps，不限最後一筆） */
+      var alreadyPresent = false;
+      for (var b = locSteps.length - 1; b >= 0; b--) {
+        var prev = locSteps[b];
+        if (prev.action === 'present' && prev.xpath === xpath) { alreadyPresent = true; break; }
+        if (prev.action === 'click' || prev.action === 'type' || prev.action === 'dropdown' || prev.action === 'press' || prev.action === 'open') break;
+      }
+      if (!alreadyPresent) {
         pushStep({ xpath: xpath, value: '', action: 'present', url: window.location.href }, el);
       }
     }
@@ -790,8 +901,8 @@
       var ps = playSteps[idx];
       var line = (ps.xpath || '') + ', ' + (ps.value || '') + ', ' + ps.action;
       showToast('\u25B6 [' + (idx + 1) + '/' + playSteps.length + '] ' + line);
-      executePlayStep(ps, idx, function () {
-        idx++;
+      executePlayStep(ps, idx, function (jumpTo) {
+        idx = (typeof jumpTo === 'number') ? jumpTo : (idx + 1);
         waitWhilePaused(function () { setTimeout(next, 500); });
       });
     }
@@ -829,9 +940,10 @@
     }
     if (ps.action === 'check_presence_to_continue') {
       if (!findPlayEl(ps)) {
-        idx = skipCheckBlock(idx);
+        done(skipCheckBlock(idx));
+      } else {
+        done();
       }
-      done();
       return;
     }
     if (ps.action === 'end_check_presence_to_continue') {
@@ -863,6 +975,11 @@
       done();
       return;
     }
+    /* 播放時 DOM 可能已變：xpath 若不唯一，警告「可能點到錯元素」 */
+    var nowCount = ps.xpath ? xpathMatchCount(ps.xpath) : 1;
+    if (nowCount > 1) {
+      showToast('\u26A0 xpath 非唯一 (' + nowCount + ' 個元素): ' + truncatePath(ps.xpath));
+    }
     clearHighlight();
     highlightEl(el);
 
@@ -871,16 +988,19 @@
         el.click();
         break;
       case 'type':
-        el.value = ps.value;
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        setNativeValue(el, ps.value);
         break;
       case 'dropdown':
-        el.value = ps.value;
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        setSelectValue(el, ps.value);
         break;
       case 'press':
-        el.dispatchEvent(new KeyboardEvent('keydown', { key: ps.value, bubbles: true }));
+        if (ps.value === 'CTRL+A') {
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: 'a', ctrlKey: true, bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { key: 'a', ctrlKey: true, bubbles: true }));
+        } else {
+          el.dispatchEvent(new KeyboardEvent('keydown', { key: normalizePressKey(ps.value), bubbles: true }));
+          el.dispatchEvent(new KeyboardEvent('keyup', { key: normalizePressKey(ps.value), bubbles: true }));
+        }
         break;
       case 'present':
         showToast((el ? '\u2705' : '\u26A0') + ' present');
@@ -902,11 +1022,59 @@
     if (ps.el && document.contains(ps.el)) return ps.el;
     if (!ps.xpath) return null;
     try {
-      var parts = ps.xpath.split('/@');
-      var xp = parts[0];
+      var xp = stripAttrSuffix(ps.xpath);
       var result = document.evaluate(xp, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null);
       return result.singleNodeValue;
     } catch (_) { return null; }
+  }
+
+  /* 對受控元件（React/Angular）設值：用原生 value setter 覆寫 prototype 上的 setter，
+     再派發 input/change，確保框架的 onChange/ngModelChange 被觸發 */
+  function setNativeValue(el, value) {
+    var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype
+              : el.tagName === 'SELECT' ? HTMLSelectElement.prototype
+              : HTMLInputElement.prototype;
+    var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+    if (desc && desc.set) {
+      desc.set.call(el, value);
+    } else {
+      el.value = value;
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
+  /* dropdown 播放：值為錄製時的可見文字 label（可能含中/英文）。
+     single：先依文字找 option 設定 selected，找不到再回退原生 value setter（相容舊錄的 value 值）；
+     multiple：以 ';' 分隔，逐一比對文字或 value 勾選 */
+  function setSelectValue(el, value) {
+    var v = String(value == null ? '' : value);
+    var opts = el.options;
+    if (el.multiple) {
+      var want = v.split(';');
+      for (var i = 0; i < opts.length; i++) {
+        var m = optionLabel(opts[i]);
+        var mv = optionValue(opts[i]);
+        opts[i].selected = want.indexOf(m) !== -1 || want.indexOf(mv) !== -1;
+      }
+    } else {
+      var idx = -1;
+      for (var i = 0; i < opts.length; i++) {
+        if (optionLabel(opts[i]) === v) { idx = i; break; }
+      }
+      if (idx >= 0) {
+        el.selectedIndex = idx;
+      } else {
+        var proto = HTMLSelectElement.prototype;
+        var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+        if (desc && desc.set) {
+          desc.set.call(el, v);
+        } else {
+          el.value = v;
+        }
+      }
+    }
+    el.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   function skipCheckBlock(startIdx) {
@@ -925,6 +1093,20 @@
     if (!s) return '';
     if (s.length > 30) return '...' + s.slice(-27);
     return s;
+  }
+
+  /* 錄製時 press 存 e.key.toUpperCase()（如 'TAB'、'ENTER'），播放時需還原成
+     KeyboardEvent 的合法 key 值（'Tab'、'Enter'），否則 keydown handler 比對不到 */
+  var PRESS_KEY_MAP = {
+    'TAB': 'Tab', 'ENTER': 'Enter', 'ESCAPE': 'Escape', 'DELETE': 'Delete',
+    'BACKSPACE': 'Backspace', 'ARROWDOWN': 'ArrowDown', 'ARROWUP': 'ArrowUp',
+    'ARROWLEFT': 'ArrowLeft', 'ARROWRIGHT': 'ArrowRight', 'HOME': 'Home',
+    'END': 'End', 'PAGEUP': 'PageUp', 'PAGEDOWN': 'PageDown',
+    'SPACE': ' ', 'INSERT': 'Insert'
+  };
+  function normalizePressKey(v) {
+    if (v && PRESS_KEY_MAP[v]) return PRESS_KEY_MAP[v];
+    return v;
   }
 
   function clearHighlight() {
@@ -1071,7 +1253,7 @@
   function csvQuote(val) {
     if (val == null) return '';
     var s = String(val);
-    if (s.indexOf(',') !== -1 || s.indexOf('\n') !== -1) {
+    if (s.indexOf(',') !== -1 || s.indexOf('\n') !== -1 || s.indexOf('\r') !== -1 || s.indexOf('"') !== -1) {
       return '"' + s.replace(/"/g, '""') + '"';
     }
     return s;

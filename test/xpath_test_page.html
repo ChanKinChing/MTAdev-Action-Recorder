@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>MTAdev Recorder - XPath Generation Test Page (50 cases)</title>
+<style>
+  body { font-family: 'Segoe UI', 'Microsoft JhengHei', sans-serif; padding: 20px; background: #f7f8fa; color: #222; }
+  .group { margin: 24px 0; padding: 16px; border: 1px solid #ddd; border-radius: 8px; background: #fff; }
+  .group h2 { margin: 0 0 12px; font-size: 16px; color: #333; }
+  .case { display: inline-block; margin: 8px 12px 8px 0; vertical-align: top; }
+  .case b { display: block; font-size: 11px; color: #888; margin-bottom: 4px; }
+  table { border-collapse: collapse; }
+  td, th { border: 1px solid #ccc; padding: 4px 8px; }
+  .card { display: inline-block; border: 1px solid #bbb; padding: 8px; margin: 4px; border-radius: 6px; }
+</style>
+</head>
+<body>
+<h1>XPath Generation Test Page</h1>
+
+<!-- ============ GROUP A: 不同元素型別 (TC01-TC16) ============ -->
+<div class="group">
+  <h2>Group A - 不同元素型別 (TC01-TC16)</h2>
+
+  <span class="case"><b>TC01 button#id</b><button id="btn-01" data-tc="TC01">Save</button></span>
+  <span class="case"><b>TC02 input text name</b><input id="inp-02" name="username" type="text" data-tc="TC02"></span>
+  <span class="case"><b>TC03 input password</b><input id="inp-03" name="pass" type="password" data-tc="TC03"></span>
+  <span class="case"><b>TC04 checkbox</b><input id="chk-04" type="checkbox" data-tc="TC04"></span>
+  <span class="case"><b>TC05 radio</b><input id="rad-05" type="radio" name="rg1" data-tc="TC05"></span>
+  <span class="case"><b>TC06 select 英文</b><select id="sel-06" name="country" data-tc="TC06">
+    <option value="1">Alpha</option><option value="2">Bravo</option><option value="3">Charlie</option>
+  </select></span>
+  <span class="case"><b>TC07 select 中文</b><select id="sel-07" name="city" data-tc="TC07">
+    <option value="1">台北</option><option value="2">台中</option><option value="3">高雄</option>
+  </select></span>
+  <span class="case"><b>TC08 select Hex value</b><select id="sel-08" data-tc="TC08">
+    <option value="0x1F4A">公司三</option><option value="0x1F4B">公司四</option>
+  </select></span>
+  <span class="case"><b>TC09 select string: 前綴</b><select id="sel-09" data-tc="TC09">
+    <option value="string:company1">第一商</option><option value="string:company2">第二商</option>
+  </select></span>
+  <span class="case"><b>TC10 textarea</b><textarea id="ta-10" name="desc" data-tc="TC10"></textarea></span>
+  <span class="case"><b>TC11 a[href]</b><a id="lnk-11" href="#x" data-tc="TC11">Link</a></span>
+  <span class="case"><b>TC12 img</b><img id="img-12" data-cy="logo" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="logo" data-tc="TC12"></span>
+  <span class="case"><b>TC13 span 文字</b><span id="sp-13" data-tc="TC13">Saved OK</span></span>
+  <span class="case"><b>TC14 div class</b><div id="dv-14" class="panel success" data-tc="TC14">Panel</div></span>
+  <span class="case"><b>TC15 li</b><ul><li id="li-15" data-tc="TC15">First Item</li></ul></span>
+  <span class="case"><b>TC16 table td</b><table><tr><td id="td-16" data-tc="TC16">Cell Value</td></tr></table></span>
+</div>
+
+<!-- ============ GROUP B: 相同屬性多實例 (TC17-TC34) ============ -->
+<div class="group">
+  <h2>Group B - 相同屬性多實例 (TC17-TC34)</h2>
+
+  <div class="case">
+    <b>TC17-19 相同 ng-click x3</b>
+    <button ng-click="save()" data-tc="TC17">Save</button>
+    <button ng-click="save()" data-tc="TC18">Save</button>
+    <button ng-click="save()" data-tc="TC19">Save</button>
+  </div>
+
+  <div class="case">
+    <b>TC20-22 相同 data-testid x3</b>
+    <button data-testid="row-action" data-tc="TC20">Edit</button>
+    <button data-testid="row-action" data-tc="TC21">Edit</button>
+    <button data-testid="row-action" data-tc="TC22">Edit</button>
+  </div>
+
+  <div class="case">
+    <b>TC23-25 相同 class 不同文字 x3</b>
+    <div class="msg" data-tc="TC23">Msg A</div>
+    <div class="msg" data-tc="TC24">Msg B</div>
+    <div class="msg" data-tc="TC25">Msg C</div>
+  </div>
+
+  <div class="case">
+    <b>TC26-28 相同 name input x3</b>
+    <input name="qty" data-tc="TC26">
+    <input name="qty" data-tc="TC27">
+    <input name="qty" data-tc="TC28">
+  </div>
+
+  <div class="case">
+    <b>TC29-31 相同 text span x3</b>
+    <span data-tc="TC29">Shared</span>
+    <span data-tc="TC30">Shared</span>
+    <span data-tc="TC31">Shared</span>
+  </div>
+
+  <div class="case">
+    <b>TC32-33 相同結構卡片 x2</b>
+    <div class="card"><button class="inner" data-tc="TC32">Go</button></div>
+    <div class="card"><button class="inner" data-tc="TC33">Go</button></div>
+  </div>
+
+  <div class="case">
+    <b>TC34 相同 name radio x3</b>
+    <input type="radio" name="rg2" value="a" data-tc="TC34">
+    <input type="radio" name="rg2" value="b">
+    <input type="radio" name="rg2" value="c">
+  </div>
+</div>
+
+<!-- ============ GROUP C: 不同屬性 (TC35-TC50) ============ -->
+<div class="group">
+  <h2>Group C - 不同屬性 (TC35-TC50)</h2>
+
+  <span class="case"><b>TC35 id 唯一</b><button id="uid-35" data-tc="TC35">IdBtn</button></span>
+  <span class="case"><b>TC36 name 唯一</b><input name="uname-36" data-tc="TC36"></span>
+  <span class="case"><b>TC37 data-testid 唯一</b><button data-testid="tid-37" data-tc="TC37">Tid</button></span>
+  <span class="case"><b>TC38 data-cy 唯一</b><button data-cy="cy-38" data-tc="TC38">Cy</button></span>
+  <span class="case"><b>TC39 ng-click 唯一</b><button ng-click="onlyAction()" data-tc="TC39">Ng</button></span>
+  <span class="case"><b>TC40 (click) 括號屬性</b><button (click)="ang()" data-tc="TC40">Ang</button></span>
+  <span class="case"><b>TC41 onclick</b><div onclick="go()" data-tc="TC41">On</div></span>
+  <span class="case"><b>TC42 class 唯一</b><span class="unique-cls-42" data-tc="TC42">Cls</span></span>
+  <span class="case"><b>TC43 text() 唯一</b><p data-tc="TC43">Unique Text Here</p></span>
+  <span class="case"><b>TC44 事件屬性+and @type</b><button type="submit" ng-click="submitForm()" data-tc="TC44">Submit</button></span>
+  <span class="case"><b>TC45 純函數 stripAttrSuffix</b><span>(JS 單元檢查)</span></span>
+  <span class="case"><b>TC46 深層巢狀無屬性</b><div><div><div><span data-tc="TC46">Deep</span></div></div></div></span>
+  <span class="case"><b>TC47 label 包 input</b><label data-tc="TC47">Name<input type="text"></label></span>
+  <span class="case"><b>TC48 表格同結構 row2</b><table class="grid"><tr><td>R1</td></tr><tr><td data-tc="TC48">R2</td></tr></table></span>
+  <span class="case"><b>TC49 相同 select x2 (第二個)</b>
+    <select><option value="1">Bravo1</option><option value="2">Bravo2</option></select>
+    <select data-tc="TC49"><option value="1">Bravo1</option><option value="2">Bravo2</option></select>
+  </span>
+  <span class="case"><b>TC50 重複 id</b>
+    <input id="dup" data-tc="TC50">
+    <input id="dup">
+  </span>
+</div>
+
+<script>
+  /* 事件委派：點到 [data-tc] 元素時記錄 data-clicked，供播放驗證 */
+  document.addEventListener('click', function (e) {
+    var el = e.target && e.target.closest ? e.target.closest('[data-tc]') : null;
+    if (el) el.setAttribute('data-clicked', '1');
+  });
+
+  /* 產生 xpath 的入口（XPathCore 由測試端注入）
+     回傳 { tc, xp, count, isTarget, tag, ownText } */
+  window.__genXPath = function (tcId) {
+    var el = document.querySelector('[data-tc="' + tcId + '"]');
+    if (!el) return { error: 'element not found', tc: tcId };
+    if (!window.XPathCore) return { error: 'XPathCore not injected', tc: tcId };
+    var xp = XPathCore.generateXPath(el);
+    var count = XPathCore.xpathMatchCount(xp);
+    var isTarget = XPathCore.isUniqueTo(xp, el);
+    return {
+      tc: tcId,
+      xp: xp,
+      count: count,
+      isTarget: isTarget,
+      tag: el.tagName,
+      ownText: (el.textContent || '').trim()
+    };
+  };
+
+  /* 取得元素目前 value（供 type/dropdown 播放驗證） */
+  window.__getVal = function (tcId) {
+    var el = document.querySelector('[data-tc="' + tcId + '"]');
+    return el ? (el.value != null ? String(el.value) : '') : null;
+  };
+
+  /* 取得元素 data-clicked 標記 */
+  window.__clicked = function (tcId) {
+    var el = document.querySelector('[data-tc="' + tcId + '"]');
+    return el ? (el.getAttribute('data-clicked') === '1') : false;
+  };
+
+  /* dropdown: 傳入 label 文字，回傳選中的 option label（供 select_option_by_text 後比對） */
+  window.__selectedLabel = function (tcId) {
+    var el = document.querySelector('[data-tc="' + tcId + '"]');
+    if (!el) return null;
+    var o = el.selectedIndex >= 0 ? el.options[el.selectedIndex] : null;
+    return o ? (o.textContent || '').trim() : '';
+  };
+</script>
+</body>
+</html>

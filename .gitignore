@@ -1,0 +1,8 @@
+# 備份 / 日誌 / 資料檔 — 永遠不要上傳 (Git-Security-Scan-Tool 規則)
+__Backups_/
+*.log
+latest_logs/
+archived_logs/
+reports/
+.env
+*.csv

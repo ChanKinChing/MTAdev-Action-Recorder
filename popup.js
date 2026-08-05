@@ -10,7 +10,7 @@ let currentTabId = null;
 function csvQuote(val) {
   if (val == null) return '';
   var s = String(val);
-  if (s.indexOf(',') !== -1 || s.indexOf('\n') !== -1) {
+  if (s.indexOf(',') !== -1 || s.indexOf('\n') !== -1 || s.indexOf('\r') !== -1 || s.indexOf('"') !== -1) {
     return '"' + s.replace(/"/g, '""') + '"';
   }
   return s;
@@ -20,11 +20,7 @@ function stepsToCSV(testName, steps) {
   var parts = [csvQuote(testName)];
   for (var i = 0; i < steps.length; i++) {
     var step = steps[i];
-    if (step.action === 'open') {
-      parts.push(csvQuote(step.value), '', 'open');
-    } else {
-      parts.push(csvQuote(step.xpath || ''), csvQuote(step.value || ''), step.action);
-    }
+    parts.push(csvQuote(step.xpath || ''), csvQuote(step.value || ''), step.action);
   }
   return parts.join(',');
 }
